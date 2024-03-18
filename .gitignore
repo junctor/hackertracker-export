@@ -1,3 +1,6 @@
+# ht files
+out/
+
 # Logs
 logs
 *.log
