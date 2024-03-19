@@ -8,31 +8,12 @@ import {
 } from "firebase/firestore/lite";
 import { type Firestore } from "firebase/firestore";
 
-export async function getLocations(db: Firestore, conference: string) {
-  const docRef = collection(db, "conferences", conference, "locations");
-  const docSnap = await getDocs(docRef);
-  const firebaseData = docSnap.docs.map(
-    (speakerDoc) => speakerDoc.data() as any
-  );
-
-  return firebaseData;
-}
-
 export async function getSpeakers(db: Firestore, conference: string) {
   const docRef = collection(db, "conferences", conference, "speakers");
   const docSnap = await getDocs(docRef);
   const firebaseData = docSnap.docs.map(
     (speakerDoc) => speakerDoc.data() as any
   );
-
-  return firebaseData;
-}
-
-export async function getTags(db: Firestore, conference: string) {
-  const docRef = collection(db, "conferences", conference, "tagtypes");
-  const docSnap = await getDocs(docRef);
-  const firebaseData =
-    docSnap.docs.flatMap((tagsDoc) => tagsDoc.data() as any) ?? [];
 
   return firebaseData;
 }
