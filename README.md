@@ -20,7 +20,7 @@ _Fetches the 10 recently updated conferences from Firebase and exports static js
 
 ### Firebase API key
 
-Script requires the Firebase API key to be set as the `FIREBASE_API_KEY` environment variable. This stops @Advice-Dog from getting alerted every time I leak the key, but you are all hackers and undoubtedly you’ll find it anyway.
+Script requires the Firebase API key to be set as the `FIREBASE_API_KEY` environment variable. This stops [@Advice-Dog](https://github.com/Advice-Dog) from getting alerted every time I leak the key, but you are all hackers and undoubtedly you’ll find it anyway.
 
 ### Tailwind Safelisting colors
 
