@@ -13,7 +13,7 @@ void (async () => {
 
   const fbDb = await firebaseInit(apiKey);
 
-  const confs = await getConferences(fbDb, 5);
+  const confs = await getConferences(fbDb, 10);
 
   const outputDir = "./out/ht/";
 
