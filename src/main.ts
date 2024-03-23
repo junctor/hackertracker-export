@@ -21,11 +21,27 @@ void (async () => {
 
   await fs.promises.writeFile(`${outputDir}/index.json`, JSON.stringify(confs));
 
-  await Promise.all(
+  const confColors = await Promise.all(
     confs
       .filter((conf) => !conf.hidden)
       .map(async (conf) => {
-        await conference(fbDb, conf, outputDir);
+        const result = await conference(fbDb, conf, outputDir);
+        return result;
       })
+  );
+
+  const allColors = Array.from(
+    confColors.reduce((acc, set) => {
+      return new Set([...acc, ...set]);
+    }, new Set<string>())
+  );
+
+  const colorOutput = {
+    colors: allColors,
+  };
+
+  await fs.promises.writeFile(
+    `${outputDir}/colors.json`,
+    JSON.stringify(colorOutput)
   );
 })();

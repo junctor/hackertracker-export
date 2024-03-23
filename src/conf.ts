@@ -6,7 +6,7 @@ export default async function conference(
   fbDb: Firestore,
   htConf: HTConference,
   outputDir: string
-): Promise<void> {
+): Promise<Set<string>> {
   const childDir = `${outputDir}/conferences/${htConf.code}`;
 
   fs.mkdirSync(childDir, { recursive: true });
@@ -27,4 +27,8 @@ export default async function conference(
       JSON.stringify(htSpeakers)
     ),
   ]);
+
+  const eventColors = new Set(htEvents.map((e) => e.type.color as string));
+
+  return eventColors;
 }
