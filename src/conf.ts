@@ -1,6 +1,6 @@
 import type { Firestore } from "firebase/firestore";
 import fs from "fs";
-import { getEvents, getSpeakers } from "./fb";
+import { getEvents } from "./fb";
 
 export default async function conference(
   fbDb: Firestore,
@@ -11,10 +11,7 @@ export default async function conference(
 
   fs.mkdirSync(childDir, { recursive: true });
 
-  const [htEvents, htSpeakers] = await Promise.all([
-    getEvents(fbDb, htConf.code),
-    getSpeakers(fbDb, htConf.code),
-  ]);
+  const [htEvents] = await Promise.all([getEvents(fbDb, htConf.code)]);
 
   await Promise.all([
     fs.promises.writeFile(
@@ -22,10 +19,6 @@ export default async function conference(
       JSON.stringify(htConf)
     ),
     fs.promises.writeFile(`${childDir}/events.json`, JSON.stringify(htEvents)),
-    fs.promises.writeFile(
-      `${childDir}/speakers.json`,
-      JSON.stringify(htSpeakers)
-    ),
   ]);
 
   const eventColors = new Set(htEvents.map((e) => e.type.color as string));

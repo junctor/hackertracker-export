@@ -8,16 +8,6 @@ import {
 } from "firebase/firestore/lite";
 import { type Firestore } from "firebase/firestore";
 
-export async function getSpeakers(db: Firestore, conference: string) {
-  const docRef = collection(db, "conferences", conference, "speakers");
-  const docSnap = await getDocs(docRef);
-  const firebaseData = docSnap.docs.map(
-    (speakerDoc) => speakerDoc.data() as any
-  );
-
-  return firebaseData;
-}
-
 export async function getConferences(
   db: Firestore,
   count: number = 10
