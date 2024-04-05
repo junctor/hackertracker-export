@@ -37,7 +37,7 @@ void (async () => {
   );
 
   const colorOutput = {
-    colors: allColors,
+    colors: allColors.sort(),
   };
 
   await fs.promises.writeFile(
