@@ -14,10 +14,6 @@ export default async function conference(
   const [htEvents] = await Promise.all([getEvents(fbDb, htConf.code)]);
 
   await Promise.all([
-    fs.promises.writeFile(
-      `${childDir}/conference.json`,
-      JSON.stringify(htConf)
-    ),
     fs.promises.writeFile(`${childDir}/events.json`, JSON.stringify(htEvents)),
   ]);
 
