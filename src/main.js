@@ -4,14 +4,7 @@ import fs from "fs";
 import conference from "./conf.js";
 
 void (async () => {
-  const apiKey = process.env.FIREBASE_API_KEY;
-
-  if (apiKey === undefined) {
-    console.log("FIREBASE_API_KEY environment variable is not set");
-    return;
-  }
-
-  const fbDb = await firebaseInit(apiKey);
+  const fbDb = await firebaseInit();
 
   const confs = await getConferences(fbDb, 25);
 
