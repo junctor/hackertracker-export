@@ -1,4 +1,4 @@
-export function firebaseConfig(apiKey: string): Config {
+export function firebaseConfig(apiKey) {
   return {
     apiKey,
     authDomain: "hackertest-5a202.firebaseapp.com",

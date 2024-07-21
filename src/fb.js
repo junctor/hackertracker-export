@@ -6,29 +6,21 @@ import {
   orderBy,
   limit,
 } from "firebase/firestore/lite";
-import { type Firestore } from "firebase/firestore";
 
-export async function getConferences(
-  db: Firestore,
-  count: number = 10
-): Promise<HTConference[]> {
+export async function getConferences(db, count = 10) {
   const docRef = collection(db, "conferences");
   const q = query(docRef, orderBy("updated_at", "desc"), limit(count));
   const docSnap = await getDocs(q);
-  const firebaseData = docSnap.docs.map((eventsDoc: { data: () => any }) =>
-    eventsDoc.data()
-  );
+  const firebaseData = docSnap.docs.map((eventsDoc) => eventsDoc.data());
 
   return firebaseData;
 }
 
-export async function getEvents(db: Firestore, conference: string) {
+export async function getEvents(db, conference) {
   const docRef = collection(db, "conferences", conference, "events");
   const q = query(docRef, orderBy("begin_timestamp", "desc"));
   const docSnap = await getDocs(q);
-  const firebaseData = docSnap.docs.map((eventsDoc: { data: () => any }) =>
-    eventsDoc.data()
-  );
+  const firebaseData = docSnap.docs.map((eventsDoc) => eventsDoc.data());
 
   return firebaseData;
 }

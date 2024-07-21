@@ -1,12 +1,7 @@
-import type { Firestore } from "firebase/firestore";
 import fs from "fs";
-import { getEvents } from "./fb";
+import { getEvents } from "./fb.js";
 
-export default async function conference(
-  fbDb: Firestore,
-  htConf: HTConference,
-  outputDir: string
-): Promise<Set<string>> {
+export default async function conference(fbDb, htConf, outputDir) {
   const childDir = `${outputDir}/conferences/${htConf.code}`;
 
   fs.mkdirSync(childDir, { recursive: true });
@@ -17,7 +12,7 @@ export default async function conference(
     fs.promises.writeFile(`${childDir}/events.json`, JSON.stringify(htEvents)),
   ]);
 
-  const eventColors = new Set(htEvents.map((e) => e.type.color as string));
+  const eventColors = new Set(htEvents.map((e) => e.type.color));
 
   return eventColors;
 }

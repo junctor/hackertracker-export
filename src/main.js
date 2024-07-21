@@ -1,7 +1,7 @@
-import firebaseInit from "./init";
-import { getConferences } from "./fb";
+import firebaseInit from "./init.js";
+import { getConferences } from "./fb.js";
 import fs from "fs";
-import conference from "./conf";
+import conference from "./conf.js";
 
 void (async () => {
   const apiKey = process.env.FIREBASE_API_KEY;
@@ -33,7 +33,7 @@ void (async () => {
   const allColors = Array.from(
     confColors.reduce((acc, set) => {
       return new Set([...acc, ...set]);
-    }, new Set<string>())
+    }, new Set())
   );
 
   const colorOutput = {
