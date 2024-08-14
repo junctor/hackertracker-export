@@ -24,3 +24,19 @@ export async function getEvents(db, conference) {
 
   return firebaseData;
 }
+
+export async function getTags(db, conference) {
+  const docRef = collection(db, "conferences", conference, "tagtypes");
+  const docSnap = await getDocs(docRef);
+  const firebaseData = docSnap.docs.flatMap((tagsDoc) => tagsDoc.data()) ?? [];
+
+  return firebaseData;
+}
+
+export async function getSpeakers(db, conference) {
+  const docRef = collection(db, "conferences", conference, "speakers");
+  const docSnap = await getDocs(docRef);
+  const firebaseData = docSnap.docs.map((speakerDoc) => speakerDoc.data());
+
+  return firebaseData;
+}
