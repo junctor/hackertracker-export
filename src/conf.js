@@ -26,5 +26,5 @@ export default async function conference(fbDb, htConf, outputDir) {
     t.tags.map((e) => e.color_background)
   );
 
-  return new Set(eventColors, tagColors);
+  return new Set([...eventColors, ...tagColors].filter((t) => t !== null));
 }
