@@ -38,7 +38,7 @@ The info exporter writes:
 - `derived/tagIdsByLabel.json`
 - `details/<type>/<id>.json`
 
-Generated JSON is minified, uses stable key ordering, and sanitizes strings to match the JavaScript exporter behavior.
+Generated JSON is valid minified Go JSON. The exporter preserves generated paths, filenames, IDs, relationships, and fields needed by web consumers without requiring byte-for-byte parity with the JavaScript exporter.
 
 ## Firebase Access
 
