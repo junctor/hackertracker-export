@@ -528,7 +528,6 @@ func putEntity(store map[int]map[string]any, ids *[]int, model map[string]any) {
 	}
 	store[id] = model
 	*ids = append(*ids, id)
-	sort.Ints(*ids)
 }
 
 func entityStore(ids []int, byID map[int]map[string]any) map[string]any {
