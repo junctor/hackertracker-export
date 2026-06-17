@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -24,21 +25,21 @@ func run(args []string) error {
 		printHelp()
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	client, err := hackertracker.NewClient(ctx)
-	if err != nil {
-		return err
-	}
 	switch args[0] {
 	case "conferences":
-		confs, err := client.Conferences(ctx)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		client, err := hackertracker.NewClient(ctx)
 		if err != nil {
 			return err
 		}
-		data, err := export.StableJSON(confs, false)
+		confs, err := client.Conferences(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("fetch conferences: %w", err)
+		}
+		data, err := json.Marshal(confs)
+		if err != nil {
+			return fmt.Errorf("encode conferences: %w", err)
 		}
 		fmt.Println(string(data))
 		return nil
@@ -48,10 +49,19 @@ func run(args []string) error {
 		conference := fs.String("conference", "", "conference code")
 		outDir := fs.String("out", "", "output directory")
 		if err := fs.Parse(args[1:]); err != nil {
+			if err == flag.ErrHelp {
+				return nil
+			}
 			return err
 		}
 		if *conference == "" {
 			return fmt.Errorf("missing --conference")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		client, err := hackertracker.NewClient(ctx)
+		if err != nil {
+			return err
 		}
 		conf, data, err := fetchRaw(ctx, client, *conference)
 		if err != nil {
@@ -59,23 +69,23 @@ func run(args []string) error {
 		}
 		if *outDir == "" {
 			payload := map[string]any{"conference": conf, "collections": data}
-			b, err := export.StableJSON(payload, false)
+			b, err := json.Marshal(payload)
 			if err != nil {
-				return err
+				return fmt.Errorf("encode raw data for %q: %w", *conference, err)
 			}
 			fmt.Println(string(b))
 			return nil
 		}
 		if err := os.MkdirAll(*outDir, 0o755); err != nil {
-			return err
+			return fmt.Errorf("create output directory %q: %w", *outDir, err)
 		}
-		if err := export.WriteJSON(filepath.Join(*outDir, "conference.json"), conf, false); err != nil {
-			return err
+		if err := export.WriteJSON(filepath.Join(*outDir, "conference.json"), conf); err != nil {
+			return fmt.Errorf("write conference metadata: %w", err)
 		}
 		count := 1
 		for _, name := range hackertracker.CollectionNames() {
-			if err := export.WriteJSON(filepath.Join(*outDir, name+".json"), data[name], false); err != nil {
-				return err
+			if err := export.WriteJSON(filepath.Join(*outDir, name+".json"), data[name]); err != nil {
+				return fmt.Errorf("write raw collection %q: %w", name, err)
 			}
 			count++
 		}
@@ -99,7 +109,7 @@ func fetchRaw(ctx context.Context, client *hackertracker.Client, conference stri
 	for _, name := range hackertracker.CollectionNames() {
 		items, err := client.Collection(ctx, fetchCode, name)
 		if err != nil {
-			return hackertracker.Conference{}, nil, fmt.Errorf("fetch %s: %w", name, err)
+			return hackertracker.Conference{}, nil, fmt.Errorf("fetch %s for %q: %w", name, fetchCode, err)
 		}
 		raw[name] = items
 	}
