@@ -20,7 +20,7 @@ type Client struct {
 func NewClient(ctx context.Context) (*Client, error) {
 	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: ProjectID}, option.WithoutAuthentication())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("initialize Firebase app for project %q: %w", ProjectID, err)
 	}
 	return &Client{app: app}, nil
 }
@@ -28,7 +28,7 @@ func NewClient(ctx context.Context) (*Client, error) {
 func (c *Client) Conferences(ctx context.Context) ([]Conference, error) {
 	db, err := c.app.Firestore(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open Firestore client: %w", err)
 	}
 	defer db.Close()
 
@@ -40,7 +40,7 @@ func (c *Client) Conferences(ctx context.Context) ([]Conference, error) {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("iterate conferences: %w", err)
 		}
 		var conf Conference
 		if err := doc.DataTo(&conf); err != nil {
@@ -68,13 +68,13 @@ func (c *Client) Conference(ctx context.Context, code string) (Conference, error
 			return conf, nil
 		}
 	}
-	return Conference{}, err
+	return Conference{}, fmt.Errorf("load conference %q: %w", code, err)
 }
 
 func (c *Client) conference(ctx context.Context, code string) (Conference, error) {
 	db, err := c.app.Firestore(ctx)
 	if err != nil {
-		return Conference{}, err
+		return Conference{}, fmt.Errorf("open Firestore client: %w", err)
 	}
 	defer db.Close()
 
@@ -95,7 +95,7 @@ func (c *Client) conference(ctx context.Context, code string) (Conference, error
 func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName string) ([]map[string]any, error) {
 	db, err := c.app.Firestore(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open Firestore client: %w", err)
 	}
 	defer db.Close()
 
@@ -107,15 +107,17 @@ func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName 
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("iterate %s/%s: %w", conferenceCode, collectionName, err)
 		}
 		data, ok := normalizeFirestoreValue(doc.Data()).(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("unexpected document data for %s/%s", collectionName, doc.Ref.ID)
+			return nil, fmt.Errorf("unexpected document data for %s/%s/%s", conferenceCode, collectionName, doc.Ref.ID)
 		}
 		out = append(out, data)
 	}
-	sortCollection(out)
+	if err := sortCollection(out); err != nil {
+		return nil, fmt.Errorf("sort %s/%s: %w", conferenceCode, collectionName, err)
+	}
 	return out, nil
 }
 
@@ -138,7 +140,7 @@ func (c *Client) SourceData(ctx context.Context, conferenceCode string) (Confere
 	}
 	data, err := DecodeSourceData(raw)
 	if err != nil {
-		return Conference{}, SourceData{}, nil, err
+		return Conference{}, SourceData{}, nil, fmt.Errorf("decode source data for %q: %w", fetchCode, err)
 	}
 	return conf, data, raw, nil
 }
