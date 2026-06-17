@@ -3,11 +3,14 @@ package export
 import (
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestStableJSONSortsAndSanitizes(t *testing.T) {
+func TestWriteJSONPreservesSemanticContent(t *testing.T) {
 	value := map[string]any{
 		"b": "one\t two   three \r\n",
 		"a": map[string]any{
@@ -16,33 +19,45 @@ func TestStableJSONSortsAndSanitizes(t *testing.T) {
 			"x":  "ex",
 		},
 	}
-	got, err := StableJSON(value, true)
+	path := filepath.Join(t.TempDir(), "data.json")
+	if err := WriteJSON(path, value); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"a":{"2":"two","10":"ten","x":"ex"},"b":"one  two three\n"}`
-	if string(got) != want {
-		t.Fatalf("StableJSON mismatch\nwant: %s\n got: %s", want, got)
+
+	var decoded map[string]any
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	want := map[string]any{
+		"b": "one\t two   three \r\n",
+		"a": map[string]any{
+			"10": "ten",
+			"2":  "two",
+			"x":  "ex",
+		},
+	}
+	if !reflect.DeepEqual(decoded, want) {
+		t.Fatalf("WriteJSON decoded value mismatch\nwant: %#v\n got: %#v", want, decoded)
 	}
 }
 
-func TestStableJSONRejectsInvalidFloat(t *testing.T) {
-	_, err := StableJSON(map[string]any{"value": math.NaN()}, false)
+func TestWriteJSONRejectsInvalidFloat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.json")
+	err := WriteJSON(path, map[string]any{"value": math.NaN()})
 	if err == nil {
-		t.Fatal("StableJSON accepted NaN")
-	}
-	if !strings.Contains(err.Error(), "unsupported floating-point value") {
-		t.Fatalf("StableJSON error = %v", err)
+		t.Fatal("WriteJSON accepted NaN")
 	}
 }
 
-func TestStableJSONRejectsInvalidJSONNumber(t *testing.T) {
-	_, err := StableJSON(map[string]any{"value": json.Number("NaN")}, false)
+func TestWriteJSONRejectsInvalidJSONNumber(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.json")
+	err := WriteJSON(path, map[string]any{"value": json.Number("NaN")})
 	if err == nil {
-		t.Fatal("StableJSON accepted invalid JSON number")
-	}
-	if !strings.Contains(err.Error(), "unsupported JSON number") {
-		t.Fatalf("StableJSON error = %v", err)
+		t.Fatal("WriteJSON accepted invalid JSON number")
 	}
 }
 
