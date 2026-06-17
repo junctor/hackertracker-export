@@ -1,53 +1,55 @@
-# HackerTracker Export
+# Hacker Tracker Export
 
-A tool to export HackerTracker events to JSON format.
+Go tools for exporting Hacker Tracker Firestore data.
 
-## Table of Contents
+This repository contains two commands:
 
-- [Introduction](#introduction)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Export Static Data](#export-static-data)
-  - [Tailwind Safelisting Colors](#tailwind-safelisting-colors)
-- [References](#references)
+- `cmd/hackertracker`: generic raw Hacker Tracker fetcher.
+- `cmd/info-export`: purpose-built exporter for the `info.defcon.org` JSON shape.
 
-## Introduction
+The implementation intentionally keeps dependencies small. The only Firebase SDK dependency is:
 
-HackerTracker Export is a utility designed to fetch and export the most recently updated HackerTracker events from Firebase into static JSON files.
-
-## Installation
-
-### Install Dependencies
-
-To get started, install the required npm packages:
-
-```bash
-npm install
+```sh
+go get firebase.google.com/go/v4
 ```
 
 ## Usage
 
-### Export Static Data
-
-To export the static data, run the following command:
-
-```bash
-npm run export
-```
-
-This command will fetch the 25 most recently updated conferences from Firebase and export them as static JSON files into a newly generated `out` directory.
-
-### Tailwind Safelisting Colors
-
-To safelist colors for Tailwind CSS, use the following command:
+From this repository:
 
 ```sh
-jq '.[].type.color' ./events.json | sort -u | tr '\n' ',' | sed 's/.$//'
+go run ./cmd/hackertracker --help
+go run ./cmd/hackertracker conferences
+go run ./cmd/hackertracker fetch --conference defcon34 --out ./raw
 ```
 
-For more information on safelisting classes in Tailwind CSS, refer to the [Tailwind CSS Documentation](https://tailwindcss.com/docs/content-configuration#safelisting-classes).
+Generate the `info.defcon.org` artifacts:
 
-## References
+```sh
+go run ./cmd/info-export --conference defcon34 --out ./public/defcon34/data
+```
 
-- [HackerTracker](https://hackertracker.app/)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs/)
+The info exporter writes:
+
+- `manifest.json`
+- `entities/*.json`
+- `indexes/*.json`
+- `views/*.json`
+- `derived/tagIdsByLabel.json`
+- `details/<type>/<id>.json`
+
+Generated JSON is minified, uses stable key ordering, and sanitizes strings to match the JavaScript exporter behavior.
+
+## Firebase Access
+
+The JavaScript exporter uses the public Firebase web client without an auth flow. This Go rewrite initializes the Firebase Go SDK with `option.WithoutAuthentication()` and the Hacker Tracker project ID.
+
+If Firestore rejects unauthenticated Admin SDK access in an environment, the fetch commands fail loudly. No credential loading, REST fallback, or custom auth flow is added here.
+
+## Development
+
+Use a writable Go build cache if your environment restricts the default cache location:
+
+```sh
+GOCACHE=/tmp/hackertracker-go-build go test ./...
+```
