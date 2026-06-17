@@ -95,23 +95,52 @@ func isScalar(value any) bool {
 	}
 }
 
-func sortCollection(items []map[string]any) {
-	sort.SliceStable(items, func(i, j int) bool {
-		ai, aok := idString(items[i]["id"])
-		bi, bok := idString(items[j]["id"])
-		if aok && bok {
-			return ai < bi
+func sortCollection(items []map[string]any) error {
+	type sortableItem struct {
+		item  map[string]any
+		id    string
+		hasID bool
+		key   string
+	}
+
+	sortable := make([]sortableItem, len(items))
+	for i, item := range items {
+		id, ok := idString(item["id"])
+		sortable[i] = sortableItem{item: item, id: id, hasID: ok}
+		if ok {
+			continue
 		}
-		if aok {
+		key, err := collectionSortKey(item)
+		if err != nil {
+			return fmt.Errorf("document %d: %w", i, err)
+		}
+		sortable[i].key = key
+	}
+
+	sort.SliceStable(sortable, func(i, j int) bool {
+		if sortable[i].hasID && sortable[j].hasID {
+			return sortable[i].id < sortable[j].id
+		}
+		if sortable[i].hasID {
 			return true
 		}
-		if bok {
+		if sortable[j].hasID {
 			return false
 		}
-		ab, _ := json.Marshal(items[i])
-		bb, _ := json.Marshal(items[j])
-		return string(ab) < string(bb)
+		return sortable[i].key < sortable[j].key
 	})
+	for i := range sortable {
+		items[i] = sortable[i].item
+	}
+	return nil
+}
+
+func collectionSortKey(item map[string]any) (string, error) {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func idString(value any) (string, bool) {
