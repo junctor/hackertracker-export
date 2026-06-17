@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,43 +36,50 @@ func StableJSON(value any, sanitize bool) ([]byte, error) {
 }
 
 func WriteJSON(path string, value any, sanitize bool) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create output directory %q: %w", dir, err)
 	}
 	data, err := StableJSON(value, sanitize)
 	if err != nil {
-		return err
+		return fmt.Errorf("encode %q: %w", path, err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-"+filepath.Base(path)+"-*")
+	tmp, err := os.CreateTemp(dir, ".tmp-"+filepath.Base(path)+"-*")
 	if err != nil {
-		return err
+		return fmt.Errorf("create temp file for %q: %w", path, err)
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
-		return err
+		return fmt.Errorf("write temp file for %q: %w", path, err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
-		return err
+		return fmt.Errorf("close temp file for %q: %w", path, err)
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("replace %q: %w", path, err)
+	}
+	return nil
 }
 
 func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	dirs := []string{"entities", "indexes", "views", "details", "derived", "raw"}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create output directory %q: %w", outDir, err)
 	}
 	for _, dir := range dirs {
-		if err := os.RemoveAll(filepath.Join(outDir, dir)); err != nil {
-			return nil, err
+		path := filepath.Join(outDir, dir)
+		if err := os.RemoveAll(path); err != nil {
+			return nil, fmt.Errorf("clear generated directory %q: %w", path, err)
 		}
 	}
 	for _, dir := range []string{"entities", "indexes", "views", "details", "derived"} {
-		if err := os.MkdirAll(filepath.Join(outDir, dir), 0o755); err != nil {
-			return nil, err
+		path := filepath.Join(outDir, dir)
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return nil, fmt.Errorf("create generated directory %q: %w", path, err)
 		}
 	}
 
@@ -79,7 +87,7 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	write := func(rel string, value any) error {
 		path := filepath.Join(outDir, rel)
 		if err := WriteJSON(path, value, true); err != nil {
-			return err
+			return fmt.Errorf("write %s: %w", rel, err)
 		}
 		written = append(written, path)
 		return nil
@@ -115,7 +123,11 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 			return nil, err
 		}
 	}
-	if err := write(filepath.Join("derived", "tagIdsByLabel.json"), artifacts.Derived["tagIdsByLabel"]); err != nil {
+	tagIDsByLabel, ok := artifacts.Derived["tagIdsByLabel"]
+	if !ok {
+		return nil, fmt.Errorf("missing generated artifact: tagIdsByLabel")
+	}
+	if err := write(filepath.Join("derived", "tagIdsByLabel.json"), tagIDsByLabel); err != nil {
 		return nil, err
 	}
 
@@ -207,7 +219,7 @@ func writeStable(buf *bytes.Buffer, value any) error {
 	case nil:
 		buf.WriteString("null")
 	case string:
-		writeJSONString(buf, v)
+		return writeJSONString(buf, v)
 	case bool:
 		if v {
 			buf.WriteString("true")
@@ -219,12 +231,14 @@ func writeStable(buf *bytes.Buffer, value any) error {
 	case int64:
 		buf.WriteString(strconv.FormatInt(v, 10))
 	case float64:
-		if float64(int64(v)) == v {
-			buf.WriteString(strconv.FormatInt(int64(v), 10))
-		} else {
-			buf.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("unsupported floating-point value %v", v)
 		}
+		buf.WriteString(strconv.FormatFloat(v, 'f', -1, 64))
 	case json.Number:
+		if !json.Valid([]byte(v.String())) {
+			return fmt.Errorf("unsupported JSON number %q", v.String())
+		}
 		buf.WriteString(v.String())
 	case []int:
 		buf.WriteByte('[')
@@ -236,11 +250,16 @@ func writeStable(buf *bytes.Buffer, value any) error {
 		}
 		buf.WriteByte(']')
 	case []string:
-		items := make([]any, len(v))
-		for i := range v {
-			items[i] = v[i]
+		buf.WriteByte('[')
+		for i, item := range v {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			if err := writeJSONString(buf, item); err != nil {
+				return err
+			}
 		}
-		return writeStable(buf, items)
+		buf.WriteByte(']')
 	case []any:
 		buf.WriteByte('[')
 		for i, item := range v {
@@ -277,7 +296,9 @@ func writeStable(buf *bytes.Buffer, value any) error {
 			if i > 0 {
 				buf.WriteByte(',')
 			}
-			writeJSONString(buf, key)
+			if err := writeJSONString(buf, key); err != nil {
+				return err
+			}
 			buf.WriteByte(':')
 			if err := writeStable(buf, v[key]); err != nil {
 				return err
@@ -300,14 +321,15 @@ func writeStable(buf *bytes.Buffer, value any) error {
 	return nil
 }
 
-func writeJSONString(buf *bytes.Buffer, value string) {
+func writeJSONString(buf *bytes.Buffer, value string) error {
 	var tmp bytes.Buffer
 	enc := json.NewEncoder(&tmp)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(value); err != nil {
-		panic(err)
+		return err
 	}
 	buf.Write(bytes.TrimRight(tmp.Bytes(), "\n"))
+	return nil
 }
 
 func objectKeys(m map[string]any) []string {
