@@ -58,18 +58,18 @@ func run(args []string) error {
 	}
 	conf, data, _, err := client.SourceData(ctx, confCode)
 	if err != nil {
-		return err
+		return fmt.Errorf("load source data for %q: %w", confCode, err)
 	}
 	artifacts, err := transform.Build(conf, data, transform.BuildOptions{
 		SchemaVersion:  2,
 		BuildTimestamp: time.Now().UTC(),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("build export artifacts for %q: %w", conf.Code, err)
 	}
 	written, err := export.WriteArtifacts(out, artifacts)
 	if err != nil {
-		return err
+		return fmt.Errorf("write export artifacts to %q: %w", out, err)
 	}
 	fmt.Printf("Exported %s -> %s\n", conf.Code, out)
 	fmt.Printf("Wrote %d files\n", len(written))
