@@ -1,6 +1,7 @@
 package export
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -21,49 +22,43 @@ func NormalizeID(value any) (int, bool) {
 	case int32:
 		return int(v), true
 	case int64:
-		return int(v), true
+		return intFromInt64(v)
 	case uint:
-		return int(v), true
+		return intFromUint64(uint64(v))
 	case uint8:
 		return int(v), true
 	case uint16:
 		return int(v), true
 	case uint32:
-		return int(v), true
+		return intFromUint64(uint64(v))
 	case uint64:
-		if v > math.MaxInt {
-			return 0, false
-		}
-		return int(v), true
+		return intFromUint64(v)
 	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return 0, false
-		}
-		return int(v), true
+		return intFromFloat64(v)
 	case float32:
-		f := float64(v)
-		if math.IsNaN(f) || math.IsInf(f, 0) {
-			return 0, false
-		}
-		return int(f), true
-	case jsonNumber:
+		return intFromFloat64(float64(v))
+	case json.Number:
 		return NormalizeID(string(v))
 	case string:
 		trimmed := strings.TrimSpace(v)
 		if trimmed == "" {
 			return 0, false
 		}
+		if i, err := strconv.ParseInt(trimmed, 10, 0); err == nil {
+			return int(i), true
+		}
+		if u, err := strconv.ParseUint(trimmed, 10, 0); err == nil {
+			return intFromUint64(u)
+		}
 		f, err := strconv.ParseFloat(trimmed, 64)
-		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		if err != nil {
 			return 0, false
 		}
-		return int(f), true
+		return intFromFloat64(f)
 	default:
 		return NormalizeID(fmt.Sprint(v))
 	}
 }
-
-type jsonNumber string
 
 func NormalizeOrder(value any) *int {
 	id, ok := NormalizeID(value)
@@ -172,4 +167,32 @@ func ResolveUpdatedAtMs(updatedAt any, updatedTSZ, updatedAtStr string) *int64 {
 		}
 	}
 	return nil
+}
+
+func intFromInt64(value int64) (int, bool) {
+	id := int(value)
+	if int64(id) != value {
+		return 0, false
+	}
+	return id, true
+}
+
+func intFromUint64(value uint64) (int, bool) {
+	maxInt := uint64(^uint(0) >> 1)
+	if value > maxInt {
+		return 0, false
+	}
+	return int(value), true
+}
+
+func intFromFloat64(value float64) (int, bool) {
+	if math.IsNaN(value) || math.IsInf(value, 0) || math.Trunc(value) != value {
+		return 0, false
+	}
+	text := strconv.FormatFloat(value, 'f', 0, 64)
+	id, err := strconv.ParseInt(text, 10, 0)
+	if err != nil {
+		return 0, false
+	}
+	return int(id), true
 }
