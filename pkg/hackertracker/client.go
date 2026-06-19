@@ -109,7 +109,11 @@ func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName 
 		if err != nil {
 			return nil, fmt.Errorf("iterate %s/%s: %w", conferenceCode, collectionName, err)
 		}
-		data, ok := normalizeFirestoreValue(doc.Data()).(map[string]any)
+		normalized, err := normalizeFirestoreValue(doc.Data())
+		if err != nil {
+			return nil, fmt.Errorf("normalize %s/%s/%s: %w", conferenceCode, collectionName, doc.Ref.ID, err)
+		}
+		data, ok := normalized.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("unexpected document data for %s/%s/%s", conferenceCode, collectionName, doc.Ref.ID)
 		}
