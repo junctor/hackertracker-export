@@ -1,6 +1,7 @@
 package transform
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -247,14 +248,15 @@ func buildEventModel(event hackertracker.Event, locationIDs, personIDs, tagIDs, 
 	sort.Ints(tagIDsOut)
 
 	locationID := 0
+	locationOK := false
 	if event.Location != nil {
-		locationID, ok = export.NormalizeID(event.Location.ID)
+		locationID, locationOK = export.NormalizeID(event.Location.ID)
 	}
-	if !ok {
-		locationID, ok = export.NormalizeID(event.LocationID)
+	if !locationOK {
+		locationID, locationOK = export.NormalizeID(event.LocationID)
 	}
 	var resolvedLocation any
-	if ok && locationIDs[locationID] {
+	if locationOK && locationIDs[locationID] {
 		resolvedLocation = locationID
 	}
 	contentID, ok := export.NormalizeID(event.ContentID)
@@ -483,11 +485,11 @@ func buildEventSources(data hackertracker.SourceData) []hackertracker.Event {
 				}
 			}
 			event := existing
-			event.ID = sessionID
+			event.ID = json.Number(fmt.Sprint(sessionID))
 			if content.Title != "" {
 				event.Title = content.Title
 			}
-			if content.ID != nil {
+			if content.ID != "" {
 				event.ContentID = content.ID
 			}
 			if session.BeginTSZ != "" {
@@ -497,8 +499,8 @@ func buildEventSources(data hackertracker.SourceData) []hackertracker.Event {
 				event.EndTSZ = session.EndTSZ
 			}
 			if locationOK {
-				event.LocationID = locationID
-				event.Location = &hackertracker.Ref{ID: locationID}
+				event.LocationID = json.Number(fmt.Sprint(locationID))
+				event.Location = &hackertracker.Ref{ID: json.Number(fmt.Sprint(locationID))}
 			}
 			event.People = people
 			event.Speakers = speakers
@@ -574,12 +576,18 @@ func nullableInt64(value *int64) any {
 	return *value
 }
 
-func linksToAny(links []map[string]any) []any {
+func linksToAny(links []hackertracker.Link) []any {
 	out := make([]any, 0, len(links))
 	for _, link := range links {
-		item := map[string]any{}
-		for key, value := range link {
-			item[key] = value
+		item := map[string]any{
+			"label": link.Label,
+			"type":  link.Type,
+			"url":   link.URL,
+		}
+		for key, value := range item {
+			if value == "" {
+				delete(item, key)
+			}
 		}
 		out = append(out, item)
 	}
