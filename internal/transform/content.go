@@ -726,14 +726,6 @@ func foldLatinAccent(r rune) rune {
 	}
 }
 
-func foldString(value string) string {
-	var b strings.Builder
-	for _, r := range value {
-		b.WriteRune(foldLatinAccent(r))
-	}
-	return b.String()
-}
-
 func foldSortString(value string) string {
 	var b strings.Builder
 	for _, r := range value {

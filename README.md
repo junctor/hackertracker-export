@@ -28,7 +28,10 @@ Generate the `info.defcon.org` artifacts:
 
 ```sh
 go run ./cmd/hackertracker info-export --conference defcon34 --out ./public/defcon34/data
+go run ./cmd/hackertracker info-export --conference DCSG2026 DEFCON34 DEFCON33 --out ./public
 ```
+
+When exporting multiple conferences, `--out` is treated as a root directory. Each conference is written to a lowercased conference-code subdirectory, such as `./public/defcon34`.
 
 The info exporter writes:
 

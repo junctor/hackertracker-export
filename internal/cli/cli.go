@@ -92,29 +92,17 @@ func runFetch(args []string, stdout, stderr io.Writer) error {
 }
 
 func runInfoExport(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("info-export", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	conference := fs.String("conference", "", "conference code")
-	conferenceShort := fs.String("c", "", "conference code")
-	outDir := fs.String("out", "", "output directory")
-	outShort := fs.String("o", "", "output directory")
-	if err := fs.Parse(args); err != nil {
+	opts, err := parseInfoExportOptions(args, stderr)
+	if err != nil {
 		if err == flag.ErrHelp {
+			printInfoExportHelp(stdout)
 			return nil
 		}
 		return err
 	}
-	confCode := firstNonEmpty(*conference, *conferenceShort)
-	if confCode == "" && fs.NArg() > 0 {
-		confCode = fs.Arg(0)
-	}
-	if confCode == "" {
+	if len(opts.conferenceCodes) == 0 {
 		printInfoExportHelp(stdout)
-		return fmt.Errorf("please provide a conference code")
-	}
-	out := firstNonEmpty(*outDir, *outShort)
-	if out == "" {
-		out = filepath.Join(".", "out", "ht", strings.ToLower(confCode))
+		return fmt.Errorf("please provide at least one conference code")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -123,24 +111,108 @@ func runInfoExport(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	conf, data, _, err := client.SourceData(ctx, confCode)
-	if err != nil {
-		return fmt.Errorf("load source data for %q: %w", confCode, err)
+	multiple := len(opts.conferenceCodes) > 1
+	for _, confCode := range opts.conferenceCodes {
+		out := infoExportOutputDir(opts.outDir, confCode, multiple)
+		conf, data, _, err := client.SourceData(ctx, confCode)
+		if err != nil {
+			return fmt.Errorf("load source data for %q: %w", confCode, err)
+		}
+		artifacts, err := transform.Build(conf, data, transform.BuildOptions{
+			SchemaVersion:  2,
+			BuildTimestamp: time.Now().UTC(),
+		})
+		if err != nil {
+			return fmt.Errorf("build export artifacts for %q: %w", conf.Code, err)
+		}
+		written, err := export.WriteArtifacts(out, artifacts)
+		if err != nil {
+			return fmt.Errorf("write export artifacts to %q: %w", out, err)
+		}
+		fmt.Fprintf(stdout, "Exported %s -> %s\n", conf.Code, out)
+		fmt.Fprintf(stdout, "Wrote %d files\n", len(written))
 	}
-	artifacts, err := transform.Build(conf, data, transform.BuildOptions{
-		SchemaVersion:  2,
-		BuildTimestamp: time.Now().UTC(),
-	})
-	if err != nil {
-		return fmt.Errorf("build export artifacts for %q: %w", conf.Code, err)
-	}
-	written, err := export.WriteArtifacts(out, artifacts)
-	if err != nil {
-		return fmt.Errorf("write export artifacts to %q: %w", out, err)
-	}
-	fmt.Fprintf(stdout, "Exported %s -> %s\n", conf.Code, out)
-	fmt.Fprintf(stdout, "Wrote %d files\n", len(written))
 	return nil
+}
+
+type infoExportOptions struct {
+	conferenceCodes []string
+	outDir          string
+}
+
+func parseInfoExportOptions(args []string, _ io.Writer) (infoExportOptions, error) {
+	var conferences []string
+	var outDir string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--help" || arg == "-h":
+			return infoExportOptions{}, flag.ErrHelp
+		case arg == "--conference" || arg == "-c":
+			value, next, ok := optionValue(args, i)
+			if !ok {
+				return infoExportOptions{}, fmt.Errorf("missing value for %s", arg)
+			}
+			conferences = append(conferences, value)
+			i = next
+		case strings.HasPrefix(arg, "--conference="):
+			conferences = append(conferences, strings.TrimPrefix(arg, "--conference="))
+		case strings.HasPrefix(arg, "-c="):
+			conferences = append(conferences, strings.TrimPrefix(arg, "-c="))
+		case arg == "--out" || arg == "-o":
+			value, next, ok := optionValue(args, i)
+			if !ok {
+				return infoExportOptions{}, fmt.Errorf("missing value for %s", arg)
+			}
+			outDir = value
+			i = next
+		case strings.HasPrefix(arg, "--out="):
+			outDir = strings.TrimPrefix(arg, "--out=")
+		case strings.HasPrefix(arg, "-o="):
+			outDir = strings.TrimPrefix(arg, "-o=")
+		case strings.HasPrefix(arg, "-"):
+			return infoExportOptions{}, fmt.Errorf("unknown flag %q", arg)
+		default:
+			conferences = append(conferences, arg)
+		}
+	}
+	return infoExportOptions{
+		conferenceCodes: uniqueNonEmpty(conferences),
+		outDir:          strings.TrimSpace(outDir),
+	}, nil
+}
+
+func optionValue(args []string, index int) (string, int, bool) {
+	next := index + 1
+	if next >= len(args) || strings.HasPrefix(args[next], "-") {
+		return "", index, false
+	}
+	return args[next], next, true
+}
+
+func uniqueNonEmpty(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func infoExportOutputDir(outRoot, confCode string, multiple bool) string {
+	confDir := strings.ToLower(confCode)
+	if outRoot == "" {
+		return filepath.Join(".", "out", "ht", confDir)
+	}
+	if multiple {
+		return filepath.Join(outRoot, confDir)
+	}
+	return outRoot
 }
 
 func fetchRaw(ctx context.Context, client *hackertracker.Client, conference string) (hackertracker.Conference, map[string][]map[string]any, error) {
@@ -181,19 +253,20 @@ func printHelp(w io.Writer) {
 	fmt.Fprintln(w, `Usage:
   hackertracker conferences
   hackertracker fetch --conference <code> [--out <dir>]
-  hackertracker info-export --conference <code> --out <dir>
+  hackertracker info-export --conference <code> [<code>...] [--out <dir>]
 
 Examples:
   hackertracker conferences
   hackertracker fetch --conference defcon34 --out ./raw
-  hackertracker info-export --conference defcon34 --out ./public/defcon34/data`)
+  hackertracker info-export --conference defcon34 --out ./public/defcon34/data
+  hackertracker info-export --conference DCSG2026 DEFCON34 DEFCON33 --out ./public`)
 }
 
 func printInfoExportHelp(w io.Writer) {
 	fmt.Fprintln(w, `Usage:
-  hackertracker info-export --conference <code> --out <dir>
+  hackertracker info-export --conference <code> [<code>...] [--out <dir>]
 
 Options:
-  --conference, -c <code>  Conference code
-  --out, -o <dir>          Output directory`)
+  --conference, -c <code>  Conference code, repeatable
+  --out, -o <dir>          Output directory. With multiple conferences, this is a root directory.`)
 }

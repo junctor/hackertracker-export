@@ -143,7 +143,7 @@ type SourceData struct {
 	TagTypes      []TagType
 }
 
-var Collections = []string{
+var collections = [...]string{
 	"articles",
 	"content",
 	"documents",

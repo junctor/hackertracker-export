@@ -1,7 +1,7 @@
 package hackertracker
 
 func CollectionNames() []string {
-	out := make([]string, len(Collections))
-	copy(out, Collections)
+	out := make([]string, len(collections))
+	copy(out, collections[:])
 	return out
 }

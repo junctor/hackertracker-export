@@ -11,16 +11,16 @@ import (
 	"google.golang.org/api/option"
 )
 
-const ProjectID = "junctor-hackertracker"
+const projectID = "junctor-hackertracker"
 
 type Client struct {
 	app *firebase.App
 }
 
 func NewClient(ctx context.Context) (*Client, error) {
-	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: ProjectID}, option.WithoutAuthentication())
+	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID}, option.WithoutAuthentication())
 	if err != nil {
-		return nil, fmt.Errorf("initialize Firebase app for project %q: %w", ProjectID, err)
+		return nil, fmt.Errorf("initialize Firebase app for project %q: %w", projectID, err)
 	}
 	return &Client{app: app}, nil
 }
@@ -134,8 +134,8 @@ func (c *Client) SourceData(ctx context.Context, conferenceCode string) (Confere
 	if fetchCode == "" {
 		fetchCode = conferenceCode
 	}
-	raw := make(map[string][]map[string]any, len(Collections))
-	for _, name := range Collections {
+	raw := make(map[string][]map[string]any, len(collections))
+	for _, name := range collections {
 		items, err := c.Collection(ctx, fetchCode, name)
 		if err != nil {
 			return Conference{}, SourceData{}, nil, fmt.Errorf("fetch %s: %w", name, err)

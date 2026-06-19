@@ -44,10 +44,10 @@ func NormalizeID(value any) (int, bool) {
 		if trimmed == "" {
 			return 0, false
 		}
-		if i, err := strconv.ParseInt(trimmed, 10, 0); err == nil {
+		if i, err := strconv.ParseInt(trimmed, 10, strconv.IntSize); err == nil {
 			return int(i), true
 		}
-		if u, err := strconv.ParseUint(trimmed, 10, 0); err == nil {
+		if u, err := strconv.ParseUint(trimmed, 10, strconv.IntSize); err == nil {
 			return intFromUint64(u)
 		}
 		f, err := strconv.ParseFloat(trimmed, 64)
@@ -190,7 +190,7 @@ func intFromFloat64(value float64) (int, bool) {
 		return 0, false
 	}
 	text := strconv.FormatFloat(value, 'f', 0, 64)
-	id, err := strconv.ParseInt(text, 10, 0)
+	id, err := strconv.ParseInt(text, 10, strconv.IntSize)
 	if err != nil {
 		return 0, false
 	}

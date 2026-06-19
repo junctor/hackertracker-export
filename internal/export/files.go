@@ -18,6 +18,8 @@ type Artifacts struct {
 	Details  map[string]map[int]any
 }
 
+var generatedDirs = [...]string{"entities", "indexes", "views", "details", "derived"}
+
 func WriteJSON(path string, value any) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -49,17 +51,16 @@ func WriteJSON(path string, value any) error {
 }
 
 func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
-	dirs := []string{"entities", "indexes", "views", "details", "derived"}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create output directory %q: %w", outDir, err)
 	}
-	for _, dir := range dirs {
+	for _, dir := range generatedDirs {
 		path := filepath.Join(outDir, dir)
 		if err := os.RemoveAll(path); err != nil {
 			return nil, fmt.Errorf("clear generated directory %q: %w", path, err)
 		}
 	}
-	for _, dir := range []string{"entities", "indexes", "views", "details", "derived"} {
+	for _, dir := range generatedDirs {
 		path := filepath.Join(outDir, dir)
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			return nil, fmt.Errorf("create generated directory %q: %w", path, err)
