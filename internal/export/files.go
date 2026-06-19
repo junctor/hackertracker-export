@@ -49,7 +49,7 @@ func WriteJSON(path string, value any) error {
 }
 
 func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
-	dirs := []string{"entities", "indexes", "views", "details", "derived", "raw"}
+	dirs := []string{"entities", "indexes", "views", "details", "derived"}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create output directory %q: %w", outDir, err)
 	}
@@ -136,7 +136,7 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 }
 
 func requiredEntityNames() []string {
-	return []string{"articles", "content", "documents", "events", "locations", "organizations", "people", "tags"}
+	return []string{"articles", "content", "documents", "events", "locations", "organizations", "people", "tags", "tagTypes"}
 }
 
 func requiredViewNames() []string {

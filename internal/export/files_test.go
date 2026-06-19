@@ -73,6 +73,7 @@ func TestWriteArtifactsRequiresDerivedArtifacts(t *testing.T) {
 			"organizations": map[string]any{},
 			"people":        map[string]any{},
 			"tags":          map[string]any{},
+			"tagTypes":      map[string]any{},
 		},
 		Indexes: map[string]any{
 			"eventsByDay": map[string]any{},
