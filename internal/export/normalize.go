@@ -68,7 +68,7 @@ func NormalizeOrder(value any) *int {
 	return &id
 }
 
-func UniqueIDs(ids []any, valid map[int]bool) []int {
+func UniqueIDs[T any](ids []T, valid map[int]bool) []int {
 	seen := map[int]bool{}
 	out := []int{}
 	for _, raw := range ids {
