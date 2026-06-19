@@ -1,6 +1,10 @@
 package hackertracker
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 type Conference struct {
 	Code     string `json:"code" firestore:"code"`
@@ -108,10 +112,65 @@ type Speaker struct {
 	Description  string        `json:"description,omitempty" firestore:"description"`
 	Pronouns     string        `json:"pronouns,omitempty" firestore:"pronouns"`
 	Title        string        `json:"title,omitempty" firestore:"title"`
-	Affiliations []string      `json:"affiliations,omitempty" firestore:"affiliations"`
+	Affiliations Affiliations  `json:"affiliations,omitempty" firestore:"affiliations"`
 	Avatar       *Asset        `json:"avatar,omitempty" firestore:"avatar"`
 	Links        []Link        `json:"links,omitempty" firestore:"links"`
 	ContentIDs   []json.Number `json:"content_ids,omitempty" firestore:"content_ids"`
+}
+
+type Affiliations []string
+
+func (a *Affiliations) UnmarshalJSON(data []byte) error {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err == nil {
+		values := make([]string, 0, len(items))
+		for i, item := range items {
+			value, err := decodeAffiliation(item)
+			if err != nil {
+				return fmt.Errorf("[%d]: %w", i, err)
+			}
+			if value != "" {
+				values = append(values, value)
+			}
+		}
+		*a = values
+		return nil
+	}
+
+	value, err := decodeAffiliation(data)
+	if err != nil {
+		return err
+	}
+	if value == "" {
+		*a = nil
+	} else {
+		*a = []string{value}
+	}
+	return nil
+}
+
+func decodeAffiliation(data []byte) (string, error) {
+	var value string
+	if err := json.Unmarshal(data, &value); err == nil {
+		return strings.TrimSpace(value), nil
+	}
+
+	var item struct {
+		Organization string `json:"organization"`
+		Name         string `json:"name"`
+		Label        string `json:"label"`
+		Value        string `json:"value"`
+		Title        string `json:"title"`
+	}
+	if err := json.Unmarshal(data, &item); err != nil {
+		return "", err
+	}
+	for _, candidate := range []string{item.Organization, item.Name, item.Label, item.Value, item.Title} {
+		if candidate = strings.TrimSpace(candidate); candidate != "" {
+			return candidate, nil
+		}
+	}
+	return "", nil
 }
 
 type TagType struct {

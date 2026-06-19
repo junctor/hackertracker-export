@@ -35,6 +35,35 @@ func TestDecodeSourceDataPreservesExactNumbers(t *testing.T) {
 	}
 }
 
+func TestDecodeSourceDataDecodesSpeakerAffiliations(t *testing.T) {
+	raw := map[string][]map[string]any{
+		"speakers": {{
+			"id":   int64(1),
+			"name": "Alice",
+			"affiliations": []any{
+				"Legacy Org",
+				map[string]any{"organization": "DDAS", "title": "Vice-President"},
+				map[string]any{"organization": "", "title": "Independent Researcher"},
+			},
+		}},
+	}
+
+	data, err := DecodeSourceData(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string(data.Speakers[0].Affiliations)
+	want := []string{"Legacy Org", "DDAS", "Independent Researcher"}
+	if len(got) != len(want) {
+		t.Fatalf("affiliations = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("affiliations = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestNormalizeFirestoreValueRejectsUnsupportedValues(t *testing.T) {
 	_, err := normalizeFirestoreValue(map[string]any{"nested": struct{ Value string }{Value: "x"}})
 	if err == nil {
