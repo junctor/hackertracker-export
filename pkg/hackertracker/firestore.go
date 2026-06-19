@@ -1,6 +1,7 @@
 package hackertracker
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -40,41 +41,58 @@ func DecodeSourceData(raw map[string][]map[string]any) (SourceData, error) {
 }
 
 func decodeCollection[T any](items []map[string]any, dest *[]T) error {
-	normalized := normalizeFirestoreValue(items)
+	normalized, err := normalizeFirestoreValue(items)
+	if err != nil {
+		return err
+	}
 	b, err := json.Marshal(normalized)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(b, dest)
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	return dec.Decode(dest)
 }
 
-func normalizeFirestoreValue(value any) any {
+func normalizeFirestoreValue(value any) (any, error) {
 	switch v := value.(type) {
 	case time.Time:
-		return v.UTC().Format(time.RFC3339Nano)
+		return v.UTC().Format(time.RFC3339Nano), nil
 	case []map[string]any:
 		out := make([]any, len(v))
 		for i, item := range v {
-			out[i] = normalizeFirestoreValue(item)
+			normalized, err := normalizeFirestoreValue(item)
+			if err != nil {
+				return nil, fmt.Errorf("[%d]: %w", i, err)
+			}
+			out[i] = normalized
 		}
-		return out
+		return out, nil
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {
-			out[i] = normalizeFirestoreValue(item)
+			normalized, err := normalizeFirestoreValue(item)
+			if err != nil {
+				return nil, fmt.Errorf("[%d]: %w", i, err)
+			}
+			out[i] = normalized
 		}
-		return out
+		return out, nil
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for key, item := range v {
-			out[key] = normalizeFirestoreValue(item)
+			normalized, err := normalizeFirestoreValue(item)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", key, err)
+			}
+			out[key] = normalized
 		}
-		return out
+		return out, nil
 	default:
 		if isScalar(value) {
-			return value
+			return value, nil
 		}
-		return fmt.Sprint(value)
+		return nil, fmt.Errorf("unsupported Firestore value %T", value)
 	}
 }
 
