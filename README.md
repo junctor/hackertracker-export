@@ -1,11 +1,12 @@
 # Hacker Tracker Export
 
-Go tools for exporting Hacker Tracker Firestore data.
+Go tool for exporting Hacker Tracker Firestore data.
 
-This repository contains two commands:
+This repository contains one command with subcommands:
 
-- `cmd/hackertracker`: generic raw Hacker Tracker fetcher.
-- `cmd/info-export`: purpose-built exporter for the `info.defcon.org` JSON shape.
+- `hackertracker conferences`: list available conferences.
+- `hackertracker fetch`: fetch raw Hacker Tracker collections.
+- `hackertracker info-export`: export the `info.defcon.org` JSON shape.
 
 The implementation intentionally keeps dependencies small. The only Firebase SDK dependency is:
 
@@ -26,7 +27,7 @@ go run ./cmd/hackertracker fetch --conference defcon34 --out ./raw
 Generate the `info.defcon.org` artifacts:
 
 ```sh
-go run ./cmd/info-export --conference defcon34 --out ./public/defcon34/data
+go run ./cmd/hackertracker info-export --conference defcon34 --out ./public/defcon34/data
 ```
 
 The info exporter writes:
