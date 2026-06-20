@@ -35,16 +35,24 @@ func WriteJSON(path string, value any) error {
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		if err := tmp.Close(); err != nil {
+			return fmt.Errorf("close temp file for %q: %w", path, err)
+		}
+		if err := tmp.Close(); err != nil {
+			return fmt.Errorf("close temp file for %q: %w", path, err)
+		}
 		return fmt.Errorf("write temp file for %q: %w", path, err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		if err := tmp.Close(); err != nil {
+			return fmt.Errorf("close temp file for %q: %w", path, err)
+		}
 		return fmt.Errorf("close temp file for %q: %w", path, err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
+		if err := tmp.Close(); err != nil {
+			return fmt.Errorf("close temp file for %q: %w", path, err)
+		}
 		return fmt.Errorf("replace %q: %w", path, err)
 	}
 	return nil
