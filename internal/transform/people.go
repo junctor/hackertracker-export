@@ -1,6 +1,9 @@
 package transform
 
-import "sort"
+import (
+	"cmp"
+	"slices"
+)
 
 func buildContentDetail(content map[string]any, st *stores, allEvents []map[string]any) map[string]any {
 	sessionIDs := intSlice(content["sessions"])
@@ -22,18 +25,21 @@ func buildContentDetail(content map[string]any, st *stores, allEvents []map[stri
 	sortEvents(sessions)
 	people := []any{}
 	if entries, ok := content["people"].([]any); ok && len(entries) > 0 {
-		sort.Slice(entries, func(i, j int) bool {
-			a := entries[i].(map[string]any)
-			b := entries[j].(map[string]any)
+		slices.SortFunc(entries, func(left, right any) int {
+			a := left.(map[string]any)
+			b := right.(map[string]any)
 			ao := nullableOrderValue(a["sortOrder"])
 			bo := nullableOrderValue(b["sortOrder"])
 			if (ao == nil) != (bo == nil) {
-				return ao != nil
+				if ao != nil {
+					return -1
+				}
+				return 1
 			}
 			if ao != nil && bo != nil && *ao != *bo {
-				return *ao < *bo
+				return cmp.Compare(*ao, *bo)
 			}
-			return intValue(a["personId"]) < intValue(b["personId"])
+			return cmp.Compare(intValue(a["personId"]), intValue(b["personId"]))
 		})
 		for _, entry := range entries {
 			personID := intValue(entry.(map[string]any)["personId"])

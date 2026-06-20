@@ -1,11 +1,12 @@
 package transform
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
-	"github.com/junctor/hackertracker-export/internal/export"
 	"github.com/junctor/hackertracker-export/pkg/hackertracker"
 )
 
@@ -19,13 +20,13 @@ func buildViews(st *stores) map[string]any {
 		}
 		organizationsCardsList = append(organizationsCardsList, map[string]any{"card": card, "tagIds": intSlice(org["tagIds"])})
 	}
-	sort.Slice(organizationsCardsList, func(i, j int) bool {
-		a := organizationsCardsList[i]["card"].(map[string]any)
-		b := organizationsCardsList[j]["card"].(map[string]any)
+	slices.SortFunc(organizationsCardsList, func(left, right map[string]any) int {
+		a := left["card"].(map[string]any)
+		b := right["card"].(map[string]any)
 		if stringValue(a["name"]) != stringValue(b["name"]) {
-			return alphaLess(stringValue(a["name"]), stringValue(b["name"]))
+			return alphaCompare(stringValue(a["name"]), stringValue(b["name"]))
 		}
-		return intValue(a["id"]) < intValue(b["id"])
+		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
 	})
 	organizationsCards := map[string]any{}
 	for _, entry := range organizationsCardsList {
@@ -62,13 +63,13 @@ func buildViews(st *stores) map[string]any {
 		}
 		peopleCards = append(peopleCards, model)
 	}
-	sort.Slice(peopleCards, func(i, j int) bool {
-		a := peopleCards[i].(map[string]any)
-		b := peopleCards[j].(map[string]any)
+	slices.SortFunc(peopleCards, func(left, right any) int {
+		a := left.(map[string]any)
+		b := right.(map[string]any)
 		if stringValue(a["name"]) != stringValue(b["name"]) {
-			return alphaLess(stringValue(a["name"]), stringValue(b["name"]))
+			return alphaCompare(stringValue(a["name"]), stringValue(b["name"]))
 		}
-		return intValue(a["id"]) < intValue(b["id"])
+		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
 	})
 
 	tagTypesBrowse := buildTagTypesBrowse(st)
@@ -111,7 +112,7 @@ func buildTagTypesBrowse(st *stores) []any {
 		if len(tags) == 0 {
 			continue
 		}
-		sort.Slice(tags, func(i, j int) bool { return compareTags(tags[i], tags[j]) < 0 })
+		slices.SortFunc(tags, compareTags)
 		out = append(out, map[string]any{
 			"category":  tagType["category"],
 			"id":        tagType["id"],
@@ -120,18 +121,18 @@ func buildTagTypesBrowse(st *stores) []any {
 			"tags":      eventsAny(tags),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a := out[i].(map[string]any)
-		b := out[j].(map[string]any)
+	slices.SortFunc(out, func(left, right any) int {
+		a := left.(map[string]any)
+		b := right.(map[string]any)
 		ao := intValue(a["sortOrder"])
 		bo := intValue(b["sortOrder"])
 		if ao != bo {
-			return ao < bo
+			return cmp.Compare(ao, bo)
 		}
 		if stringValue(a["label"]) != stringValue(b["label"]) {
-			return stringValue(a["label"]) < stringValue(b["label"])
+			return cmp.Compare(stringValue(a["label"]), stringValue(b["label"]))
 		}
-		return intValue(a["id"]) < intValue(b["id"])
+		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
 	})
 	return out
 }
@@ -146,15 +147,15 @@ func buildDocumentsList(st *stores) []any {
 		}
 		out = append(out, map[string]any{"id": doc["id"], "titleText": doc["titleText"], "updatedAtMs": updated})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a := out[i].(map[string]any)
-		b := out[j].(map[string]any)
+	slices.SortFunc(out, func(left, right any) int {
+		a := left.(map[string]any)
+		b := right.(map[string]any)
 		au := int64Value(a["updatedAtMs"])
 		bu := int64Value(b["updatedAtMs"])
 		if au != bu {
-			return au > bu
+			return cmp.Compare(bu, au)
 		}
-		return intValue(a["id"]) < intValue(b["id"])
+		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
 	})
 	return out
 }
@@ -169,16 +170,16 @@ func buildContentCards(st *stores) []any {
 				tags = append(tags, compactTag(tag))
 			}
 		}
-		sort.Slice(tags, func(i, j int) bool { return compareTags(tags[i], tags[j]) < 0 })
+		slices.SortFunc(tags, compareTags)
 		out = append(out, map[string]any{"id": item["id"], "tags": eventsAny(tags), "title": item["title"]})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a := out[i].(map[string]any)
-		b := out[j].(map[string]any)
+	slices.SortFunc(out, func(left, right any) int {
+		a := left.(map[string]any)
+		b := right.(map[string]any)
 		if stringValue(a["title"]) != stringValue(b["title"]) {
-			return alphaLess(stringValue(a["title"]), stringValue(b["title"]))
+			return alphaCompare(stringValue(a["title"]), stringValue(b["title"]))
 		}
-		return intValue(a["id"]) < intValue(b["id"])
+		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
 	})
 	return out
 }
@@ -200,10 +201,10 @@ func createSearchData(st *stores) []any {
 		text := org["name"]
 		items = append(items, map[string]any{"id": org["id"], "norm": normalizeForSearch(text), "text": text, "type": "organization"})
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		a := items[i].(map[string]any)
-		b := items[j].(map[string]any)
-		return alphaLess(stringValue(a["text"]), stringValue(b["text"]))
+	slices.SortStableFunc(items, func(left, right any) int {
+		a := left.(map[string]any)
+		b := right.(map[string]any)
+		return alphaCompare(stringValue(a["text"]), stringValue(b["text"]))
 	})
 	return items
 }
@@ -213,7 +214,7 @@ func buildTagIDsByLabel(tagTypes []hackertracker.TagType) map[string]any {
 	collisions := map[string]map[int]bool{}
 	for _, tagType := range tagTypes {
 		for _, tag := range tagType.Tags {
-			id, ok := export.NormalizeID(tag.ID)
+			id, ok := normalizeID(tag.ID)
 			if !ok {
 				continue
 			}
@@ -243,12 +244,7 @@ func buildTagIDsByLabel(tagTypes []hackertracker.TagType) map[string]any {
 	if len(collisions) > 0 {
 		collisionObj := map[string]any{}
 		for key, set := range collisions {
-			ids := []int{}
-			for id := range set {
-				ids = append(ids, id)
-			}
-			sort.Ints(ids)
-			collisionObj[key] = ids
+			collisionObj[key] = slices.Sorted(maps.Keys(set))
 		}
 		result["collisions"] = collisionObj
 	}
@@ -287,7 +283,7 @@ func stringValue(value any) string {
 }
 
 func intValue(value any) int {
-	id, _ := export.NormalizeID(value)
+	id, _ := normalizeID(value)
 	return id
 }
 
@@ -300,7 +296,7 @@ func int64Value(value any) int64 {
 	case nil:
 		return 0
 	default:
-		id, _ := export.NormalizeID(v)
+		id, _ := normalizeID(v)
 		return int64(id)
 	}
 }
@@ -308,11 +304,11 @@ func int64Value(value any) int64 {
 func intSlice(value any) []int {
 	switch v := value.(type) {
 	case []int:
-		return append([]int{}, v...)
+		return slices.Clone(v)
 	case []any:
 		out := []int{}
 		for _, item := range v {
-			if id, ok := export.NormalizeID(item); ok {
+			if id, ok := normalizeID(item); ok {
 				out = append(out, id)
 			}
 		}
@@ -334,7 +330,7 @@ func nullableOrderValue(value any) *int {
 	if value == nil {
 		return nil
 	}
-	id, ok := export.NormalizeID(value)
+	id, ok := normalizeID(value)
 	if !ok {
 		return nil
 	}

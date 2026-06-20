@@ -1,9 +1,9 @@
 package transform
 
 import (
-	"sort"
-
-	"github.com/junctor/hackertracker-export/internal/export"
+	"cmp"
+	"maps"
+	"slices"
 )
 
 type builtIndexes struct {
@@ -18,14 +18,14 @@ func buildIndexes(st *stores, timezone string) builtIndexes {
 
 	for _, eventID := range st.eventIDs {
 		event := st.eventsByID[eventID]
-		eventStarts[eventID] = export.TimestampSeconds(stringValue(event["begin"]))
-		export.AddToStringIndex(eventsByDay, export.EventDay(stringValue(event["begin"]), timezone), eventID)
+		eventStarts[eventID] = timestampSeconds(stringValue(event["begin"]))
+		addToStringIndex(eventsByDay, eventDay(stringValue(event["begin"]), timezone), eventID)
 		for _, tagID := range intSlice(event["tagIds"]) {
-			export.AddToStringIndex(eventsByTag, stringValue(tagID), eventID)
+			addToStringIndex(eventsByTag, stringValue(tagID), eventID)
 		}
 	}
-	export.SortEventIndex(eventsByDay, eventStarts)
-	export.SortEventIndex(eventsByTag, eventStarts)
+	sortEventIndex(eventsByDay, eventStarts)
+	sortEventIndex(eventsByTag, eventStarts)
 	return builtIndexes{eventsByDay: eventsByDay, eventsByTag: eventsByTag}
 }
 
@@ -40,13 +40,13 @@ func buildScheduleEventViewModel(event map[string]any, st *stores, timezone stri
 			speakerNames = append(speakerNames, stringValue(person["name"]))
 		}
 	}
-	contentID, _ := export.NormalizeID(event["contentId"])
+	contentID, _ := normalizeID(event["contentId"])
 	var contentEntity any
 	if contentID != 0 {
 		contentEntity = st.contentByID[contentID]
 	}
 	locationName := "Unknown location"
-	if locationID, ok := export.NormalizeID(event["locationId"]); ok {
+	if locationID, ok := normalizeID(event["locationId"]); ok {
 		if loc := st.locationsByID[locationID]; loc != nil && loc["name"] != nil {
 			locationName = stringValue(loc["name"])
 		}
@@ -65,16 +65,16 @@ func buildScheduleEventViewModel(event map[string]any, st *stores, timezone stri
 	end := stringValue(event["end"])
 	return map[string]any{
 		"begin":                 begin,
-		"beginDisplay":          nonEmptyString(event["beginDisplay"], export.EventTimeTable(begin, true, timezone)),
-		"beginIso":              nonEmptyString(event["beginIso"], export.ISOTime(begin)),
-		"beginTimestampSeconds": export.TimestampSeconds(begin),
+		"beginDisplay":          nonEmptyString(event["beginDisplay"], eventTimeTable(begin, true, timezone)),
+		"beginIso":              nonEmptyString(event["beginIso"], isoTime(begin)),
+		"beginTimestampSeconds": timestampSeconds(begin),
 		"color":                 nonEmptyString(event["color"], ""),
 		"contentEntity":         contentEntity,
 		"contentId":             event["contentId"],
 		"end":                   end,
-		"endDisplay":            nonEmptyString(event["endDisplay"], export.EventTimeTable(end, false, timezone)),
-		"endIso":                nonEmptyString(event["endIso"], export.ISOTime(end)),
-		"endTimestampSeconds":   export.TimestampSeconds(end),
+		"endDisplay":            nonEmptyString(event["endDisplay"], eventTimeTable(end, false, timezone)),
+		"endIso":                nonEmptyString(event["endIso"], isoTime(end)),
+		"endTimestampSeconds":   timestampSeconds(end),
 		"id":                    event["id"],
 		"locationName":          locationName,
 		"session":               event,
@@ -113,13 +113,13 @@ func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) 
 	for _, articleID := range st.articleIDs {
 		announcements = append(announcements, st.articlesByID[articleID])
 	}
-	sort.Slice(announcements, func(i, j int) bool {
-		ai := int64Value(announcements[i]["updatedAtMs"])
-		aj := int64Value(announcements[j]["updatedAtMs"])
+	slices.SortFunc(announcements, func(a, b map[string]any) int {
+		ai := int64Value(a["updatedAtMs"])
+		aj := int64Value(b["updatedAtMs"])
 		if ai != aj {
-			return ai > aj
+			return cmp.Compare(aj, ai)
 		}
-		return intValue(announcements[i]["id"]) < intValue(announcements[j]["id"])
+		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
 	})
 
 	details := map[string]map[int]any{
@@ -171,11 +171,7 @@ func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) 
 }
 
 func buildAllScheduleDays(st *stores, indexes builtIndexes, modelsByEventID map[int]map[string]any, timezone string) []any {
-	keys := make([]string, 0, len(indexes.eventsByDay))
-	for day := range indexes.eventsByDay {
-		keys = append(keys, day)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(indexes.eventsByDay))
 	days := []any{}
 	for _, day := range keys {
 		events := eventsFromIDs(indexes.eventsByDay[day], st.eventsByID)
@@ -193,17 +189,13 @@ func buildAllScheduleDays(st *stores, indexes builtIndexes, modelsByEventID map[
 func buildScheduleDaysFromEvents(events []map[string]any, modelsByEventID map[int]map[string]any, timezone string) []any {
 	groups := map[string][]map[string]any{}
 	for _, event := range events {
-		day := export.EventDay(stringValue(event["begin"]), timezone)
+		day := eventDay(stringValue(event["begin"]), timezone)
 		if day == "" {
 			continue
 		}
 		groups[day] = append(groups[day], event)
 	}
-	keys := make([]string, 0, len(groups))
-	for day := range groups {
-		keys = append(keys, day)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(groups))
 	out := []any{}
 	for _, day := range keys {
 		sortEvents(groups[day])
@@ -227,13 +219,13 @@ func modelsForEvents(events []map[string]any, modelsByEventID map[int]map[string
 }
 
 func sortEvents(events []map[string]any) {
-	sort.Slice(events, func(i, j int) bool {
-		ai := export.TimestampSeconds(stringValue(events[i]["begin"]))
-		aj := export.TimestampSeconds(stringValue(events[j]["begin"]))
+	slices.SortFunc(events, func(a, b map[string]any) int {
+		ai := timestampSeconds(stringValue(a["begin"]))
+		aj := timestampSeconds(stringValue(b["begin"]))
 		if ai != aj {
-			return ai < aj
+			return cmp.Compare(ai, aj)
 		}
-		return intValue(events[i]["id"]) < intValue(events[j]["id"])
+		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
 	})
 }
 

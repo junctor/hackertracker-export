@@ -1,15 +1,17 @@
-package export
+package transform
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
-func NormalizeID(value any) (int, bool) {
+func normalizeID(value any) (int, bool) {
 	switch v := value.(type) {
 	case nil:
 		return 0, false
@@ -38,7 +40,7 @@ func NormalizeID(value any) (int, bool) {
 	case float32:
 		return intFromFloat64(float64(v))
 	case json.Number:
-		return NormalizeID(string(v))
+		return normalizeID(string(v))
 	case string:
 		trimmed := strings.TrimSpace(v)
 		if trimmed == "" {
@@ -56,23 +58,23 @@ func NormalizeID(value any) (int, bool) {
 		}
 		return intFromFloat64(f)
 	default:
-		return NormalizeID(fmt.Sprint(v))
+		return normalizeID(fmt.Sprint(v))
 	}
 }
 
-func NormalizeOrder(value any) *int {
-	id, ok := NormalizeID(value)
+func normalizeOrder(value any) *int {
+	id, ok := normalizeID(value)
 	if !ok {
 		return nil
 	}
 	return &id
 }
 
-func UniqueIDs[T any](ids []T, valid map[int]bool) []int {
+func uniqueIDs[T any](ids []T, valid map[int]bool) []int {
 	seen := map[int]bool{}
 	out := []int{}
 	for _, raw := range ids {
-		id, ok := NormalizeID(raw)
+		id, ok := normalizeID(raw)
 		if !ok {
 			continue
 		}
@@ -88,38 +90,35 @@ func UniqueIDs[T any](ids []T, valid map[int]bool) []int {
 	return out
 }
 
-func ParseTime(value string) (time.Time, bool) {
+func parseTime(value string) (time.Time, bool) {
 	if value == "" {
 		return time.Time{}, false
 	}
-	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05Z07:00"}
-	for _, layout := range layouts {
-		t, err := time.Parse(layout, value)
-		if err == nil {
-			return t, true
-		}
+	t, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}, false
 	}
-	return time.Time{}, false
+	return t, true
 }
 
-func ISOTime(value string) string {
-	t, ok := ParseTime(value)
+func isoTime(value string) string {
+	t, ok := parseTime(value)
 	if !ok {
 		return ""
 	}
 	return t.UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
-func TimestampSeconds(value string) int64 {
-	t, ok := ParseTime(value)
+func timestampSeconds(value string) int64 {
+	t, ok := parseTime(value)
 	if !ok {
 		return 0
 	}
 	return t.Unix()
 }
 
-func EventDay(value, timezone string) string {
-	t, ok := ParseTime(value)
+func eventDay(value, timezone string) string {
+	t, ok := parseTime(value)
 	if !ok {
 		return ""
 	}
@@ -130,8 +129,8 @@ func EventDay(value, timezone string) string {
 	return t.In(loc).Format("2006-01-02")
 }
 
-func EventTimeTable(value string, showTZ bool, timezone string) string {
-	t, ok := ParseTime(value)
+func eventTimeTable(value string, showTZ bool, timezone string) string {
+	t, ok := parseTime(value)
 	if !ok {
 		return ""
 	}
@@ -145,28 +144,48 @@ func EventTimeTable(value string, showTZ bool, timezone string) string {
 	return t.In(loc).Format("15:04")
 }
 
-func ResolveUpdatedAtMs(updatedAt any, updatedTSZ, updatedAtStr string) *int64 {
+func resolveUpdatedAtMs(updatedAt any, updatedTSZ, updatedAtStr string) *int64 {
 	if updatedAt != nil {
 		switch v := updatedAt.(type) {
 		case map[string]any:
-			if seconds, ok := NormalizeID(v["seconds"]); ok {
+			if seconds, ok := normalizeID(v["seconds"]); ok {
 				ms := int64(seconds) * 1000
 				return &ms
 			}
 		case string:
-			if t, ok := ParseTime(v); ok {
+			if t, ok := parseTime(v); ok {
 				ms := t.UnixMilli()
 				return &ms
 			}
 		}
 	}
 	for _, value := range []string{updatedTSZ, updatedAtStr} {
-		if t, ok := ParseTime(value); ok {
+		if t, ok := parseTime(value); ok {
 			ms := t.UnixMilli()
 			return &ms
 		}
 	}
 	return nil
+}
+
+func addToStringIndex(index map[string][]int, key string, value int) {
+	if key != "" {
+		index[key] = append(index[key], value)
+	}
+}
+
+func sortEventIndex(index map[string][]int, eventStarts map[int]int64) {
+	for key := range index {
+		slices.SortStableFunc(index[key], func(a, b int) int {
+			if eventStarts[a] != eventStarts[b] {
+				if eventStarts[a] < eventStarts[b] {
+					return -1
+				}
+				return 1
+			}
+			return cmp.Compare(a, b)
+		})
+	}
 }
 
 func intFromInt64(value int64) (int, bool) {
