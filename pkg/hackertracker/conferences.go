@@ -1,7 +1,7 @@
 package hackertracker
 
+import "slices"
+
 func CollectionNames() []string {
-	out := make([]string, len(collections))
-	copy(out, collections[:])
-	return out
+	return slices.Clone(collections[:])
 }
