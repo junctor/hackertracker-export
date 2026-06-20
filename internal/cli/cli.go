@@ -87,7 +87,9 @@ func runFetch(args []string, stdout, stderr io.Writer) error {
 		}
 		count++
 	}
-	fmt.Fprintf(stdout, "Wrote %d raw files to %s\n", count, *outDir)
+	if _, err := fmt.Fprintf(stdout, "Wrote %d raw files to %s\n", count, *outDir); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
 	return nil
 }
 
@@ -129,8 +131,12 @@ func runInfoExport(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("write export artifacts to %q: %w", out, err)
 		}
-		fmt.Fprintf(stdout, "Exported %s -> %s\n", conf.Code, out)
-		fmt.Fprintf(stdout, "Wrote %d files\n", len(written))
+		if _, err := fmt.Fprintf(stdout, "Exported %s -> %s\n", conf.Code, out); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(stdout, "Wrote %d files\n", len(written)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -240,17 +246,8 @@ func encodeJSON(w io.Writer, value any) error {
 	return enc.Encode(value)
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func printHelp(w io.Writer) {
-	fmt.Fprintln(w, `Usage:
+	_, _ = fmt.Fprintln(w, `Usage:
   hackertracker conferences
   hackertracker fetch --conference <code> [--out <dir>]
   hackertracker info-export --conference <code> [<code>...] [--out <dir>]
@@ -263,7 +260,7 @@ Examples:
 }
 
 func printInfoExportHelp(w io.Writer) {
-	fmt.Fprintln(w, `Usage:
+	_, _ = fmt.Fprintln(w, `Usage:
   hackertracker info-export --conference <code> [<code>...] [--out <dir>]
 
 Options:
