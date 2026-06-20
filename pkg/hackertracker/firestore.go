@@ -1,12 +1,10 @@
 package hackertracker
 
 import (
-	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
-	"reflect"
-	"sort"
-	"strconv"
+	"slices"
 	"time"
 )
 
@@ -41,75 +39,41 @@ func DecodeSourceData(raw map[string][]map[string]any) (SourceData, error) {
 }
 
 func decodeCollection[T any](items []map[string]any, dest *[]T) error {
-	normalized, err := normalizeFirestoreValue(items)
+	b, err := json.Marshal(items)
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(normalized)
-	if err != nil {
-		return err
-	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
-	return dec.Decode(dest)
+	return json.Unmarshal(b, dest)
 }
 
-func normalizeFirestoreValue(value any) (any, error) {
+func rawFirestoreValue(value any) any {
 	switch v := value.(type) {
 	case time.Time:
-		return v.UTC().Format(time.RFC3339Nano), nil
+		return map[string]any{
+			"nanoseconds": v.Nanosecond(),
+			"seconds":     v.Unix(),
+			"type":        "firestore/timestamp/1.0",
+		}
 	case []map[string]any:
 		out := make([]any, len(v))
 		for i, item := range v {
-			normalized, err := normalizeFirestoreValue(item)
-			if err != nil {
-				return nil, fmt.Errorf("[%d]: %w", i, err)
-			}
-			out[i] = normalized
+			out[i] = rawFirestoreValue(item)
 		}
-		return out, nil
+		return out
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {
-			normalized, err := normalizeFirestoreValue(item)
-			if err != nil {
-				return nil, fmt.Errorf("[%d]: %w", i, err)
-			}
-			out[i] = normalized
+			out[i] = rawFirestoreValue(item)
 		}
-		return out, nil
+		return out
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for key, item := range v {
-			normalized, err := normalizeFirestoreValue(item)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", key, err)
-			}
-			out[key] = normalized
+			out[key] = rawFirestoreValue(item)
 		}
-		return out, nil
+		return out
 	default:
-		if isScalar(value) {
-			return value, nil
-		}
-		return nil, fmt.Errorf("unsupported Firestore value %T", value)
-	}
-}
-
-func isScalar(value any) bool {
-	switch value.(type) {
-	case nil, bool, string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
-		return true
-	}
-	rv := reflect.ValueOf(value)
-	if !rv.IsValid() {
-		return true
-	}
-	switch rv.Kind() {
-	case reflect.Pointer, reflect.Struct, reflect.Interface:
-		return false
-	default:
-		return true
+		return value
 	}
 }
 
@@ -135,17 +99,17 @@ func sortCollection(items []map[string]any) error {
 		sortable[i].key = key
 	}
 
-	sort.SliceStable(sortable, func(i, j int) bool {
-		if sortable[i].hasID && sortable[j].hasID {
-			return sortable[i].id < sortable[j].id
+	slices.SortStableFunc(sortable, func(a, b sortableItem) int {
+		if a.hasID && b.hasID {
+			return cmp.Compare(a.id, b.id)
 		}
-		if sortable[i].hasID {
-			return true
+		if a.hasID {
+			return -1
 		}
-		if sortable[j].hasID {
-			return false
+		if b.hasID {
+			return 1
 		}
-		return sortable[i].key < sortable[j].key
+		return cmp.Compare(a.key, b.key)
 	})
 	for i := range sortable {
 		items[i] = sortable[i].item
@@ -162,21 +126,9 @@ func collectionSortKey(item map[string]any) (string, error) {
 }
 
 func idString(value any) (string, bool) {
-	switch v := value.(type) {
-	case nil:
+	if value == nil {
 		return "", false
-	case string:
-		if v == "" {
-			return "", false
-		}
-		return v, true
-	case int:
-		return strconv.Itoa(v), true
-	case int64:
-		return strconv.FormatInt(v, 10), true
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64), true
-	default:
-		return fmt.Sprint(v), true
 	}
+	text := fmt.Sprint(value)
+	return text, text != "" && text != "<nil>"
 }
