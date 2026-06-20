@@ -1,14 +1,14 @@
 # Hacker Tracker Export
 
-Go CLI for exporting Hacker Tracker Firestore data. This repository replaces the
-old JavaScript `info-export` pipeline and writes the static JSON artifacts used
-by `info.defcon.org`.
+Single-binary Go CLI for exporting Hacker Tracker Firestore data. This
+repository replaces the old JavaScript `info-export` pipeline and writes the
+static JSON artifacts used by `info.defcon.org`.
 
 The command provides three subcommands:
 
 - `hackertracker conferences`: list available conferences from Firestore.
 - `hackertracker fetch`: fetch raw Hacker Tracker collections for debugging or auditing.
-- `hackertracker info-export`: export the normalized `info.defcon.org` JSON dataset.
+- `hackertracker info-export`: export the React-facing `info.defcon.org` JSON dataset.
 
 ## Install
 
@@ -51,7 +51,7 @@ For multiple conferences, pass all conference codes in one command and make
 lowercased subdirectory:
 
 ```sh
-hackertracker info-export --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026 --out ../hackertracker-info/public/ht
+hackertracker info-export --out ../hackertracker-info/public/ht --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026
 ```
 
 That writes:
@@ -181,15 +181,15 @@ loudly.
 
 ## Development
 
-Run tests:
+Check that the binary builds:
 
 ```sh
-go test ./...
+go build ./cmd/hackertracker
 ```
 
 Use a writable Go build cache if your environment restricts the default cache
 location:
 
 ```sh
-GOCACHE=/tmp/hackertracker-go-build go test ./...
+GOCACHE=/tmp/hackertracker-go-build go build ./cmd/hackertracker
 ```
