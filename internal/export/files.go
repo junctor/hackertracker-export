@@ -3,9 +3,10 @@ package export
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 )
 
@@ -29,31 +30,9 @@ func WriteJSON(path string, value any) error {
 	if err != nil {
 		return fmt.Errorf("encode %q: %w", path, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".tmp-"+filepath.Base(path)+"-*")
-	if err != nil {
-		return fmt.Errorf("create temp file for %q: %w", path, err)
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		if err := tmp.Close(); err != nil {
-			return fmt.Errorf("close temp file for %q: %w", path, err)
-		}
-		if err := tmp.Close(); err != nil {
-			return fmt.Errorf("close temp file for %q: %w", path, err)
-		}
-		return fmt.Errorf("write temp file for %q: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		if err := tmp.Close(); err != nil {
-			return fmt.Errorf("close temp file for %q: %w", path, err)
-		}
-		return fmt.Errorf("close temp file for %q: %w", path, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		if err := tmp.Close(); err != nil {
-			return fmt.Errorf("close temp file for %q: %w", path, err)
-		}
-		return fmt.Errorf("replace %q: %w", path, err)
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write %q: %w", path, err)
 	}
 	return nil
 }
@@ -123,24 +102,16 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 		return nil, err
 	}
 
-	groups := make([]string, 0, len(artifacts.Details))
-	for group := range artifacts.Details {
-		groups = append(groups, group)
-	}
-	sort.Strings(groups)
+	groups := slices.Sorted(maps.Keys(artifacts.Details))
 	for _, group := range groups {
-		ids := make([]int, 0, len(artifacts.Details[group]))
-		for id := range artifacts.Details[group] {
-			ids = append(ids, id)
-		}
-		sort.Ints(ids)
+		ids := slices.Sorted(maps.Keys(artifacts.Details[group]))
 		for _, id := range ids {
 			if err := write(filepath.Join("details", group, strconv.Itoa(id)+".json"), artifacts.Details[group][id]); err != nil {
 				return nil, err
 			}
 		}
 	}
-	sort.Strings(written)
+	slices.Sort(written)
 	return written, nil
 }
 
