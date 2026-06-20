@@ -87,9 +87,7 @@ func runFetch(args []string, stdout, stderr io.Writer) error {
 		}
 		count++
 	}
-	if _, err := fmt.Fprintf(stdout, "Wrote %d raw files to %s\n", count, *outDir); err != nil {
-		return fmt.Errorf("write output: %w", err)
-	}
+	fmt.Printf("Wrote %d raw files to %s\n", count, *outDir)
 	return nil
 }
 
@@ -131,12 +129,8 @@ func runInfoExport(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("write export artifacts to %q: %w", out, err)
 		}
-		if _, err := fmt.Fprintf(stdout, "Exported %s -> %s\n", conf.Code, out); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(stdout, "Wrote %d files\n", len(written)); err != nil {
-			return err
-		}
+		fmt.Printf("Exported %s -> %s\n", conf.Code, out)
+		fmt.Printf("Wrote %d files\n", len(written))
 	}
 	return nil
 }
@@ -146,54 +140,29 @@ type infoExportOptions struct {
 	outDir          string
 }
 
-func parseInfoExportOptions(args []string, _ io.Writer) (infoExportOptions, error) {
+func parseInfoExportOptions(args []string, stderr io.Writer) (infoExportOptions, error) {
+	fs := flag.NewFlagSet("info-export", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() {}
 	var conferences []string
-	var outDir string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--help" || arg == "-h":
-			return infoExportOptions{}, flag.ErrHelp
-		case arg == "--conference" || arg == "-c":
-			value, next, ok := optionValue(args, i)
-			if !ok {
-				return infoExportOptions{}, fmt.Errorf("missing value for %s", arg)
-			}
-			conferences = append(conferences, value)
-			i = next
-		case strings.HasPrefix(arg, "--conference="):
-			conferences = append(conferences, strings.TrimPrefix(arg, "--conference="))
-		case strings.HasPrefix(arg, "-c="):
-			conferences = append(conferences, strings.TrimPrefix(arg, "-c="))
-		case arg == "--out" || arg == "-o":
-			value, next, ok := optionValue(args, i)
-			if !ok {
-				return infoExportOptions{}, fmt.Errorf("missing value for %s", arg)
-			}
-			outDir = value
-			i = next
-		case strings.HasPrefix(arg, "--out="):
-			outDir = strings.TrimPrefix(arg, "--out=")
-		case strings.HasPrefix(arg, "-o="):
-			outDir = strings.TrimPrefix(arg, "-o=")
-		case strings.HasPrefix(arg, "-"):
-			return infoExportOptions{}, fmt.Errorf("unknown flag %q", arg)
-		default:
-			conferences = append(conferences, arg)
-		}
+	fs.Func("conference", "conference code", func(value string) error {
+		conferences = append(conferences, value)
+		return nil
+	})
+	fs.Func("c", "conference code", func(value string) error {
+		conferences = append(conferences, value)
+		return nil
+	})
+	outDir := fs.String("out", "", "output directory")
+	fs.StringVar(outDir, "o", "", "output directory")
+	if err := fs.Parse(args); err != nil {
+		return infoExportOptions{}, err
 	}
+	conferences = append(conferences, fs.Args()...)
 	return infoExportOptions{
 		conferenceCodes: uniqueNonEmpty(conferences),
-		outDir:          strings.TrimSpace(outDir),
+		outDir:          strings.TrimSpace(*outDir),
 	}, nil
-}
-
-func optionValue(args []string, index int) (string, int, bool) {
-	next := index + 1
-	if next >= len(args) || strings.HasPrefix(args[next], "-") {
-		return "", index, false
-	}
-	return args[next], next, true
 }
 
 func uniqueNonEmpty(values []string) []string {
@@ -221,20 +190,20 @@ func infoExportOutputDir(outRoot, confCode string, multiple bool) string {
 	return outRoot
 }
 
-func fetchRaw(ctx context.Context, client *hackertracker.Client, conference string) (hackertracker.Conference, map[string][]map[string]any, error) {
-	conf, err := client.Conference(ctx, conference)
+func fetchRaw(ctx context.Context, client *hackertracker.Client, conference string) (map[string]any, map[string][]map[string]any, error) {
+	conf, err := client.RawConference(ctx, conference)
 	if err != nil {
-		return hackertracker.Conference{}, nil, err
+		return nil, nil, err
 	}
 	raw := map[string][]map[string]any{}
-	fetchCode := conf.Code
+	fetchCode, _ := conf["code"].(string)
 	if fetchCode == "" {
 		fetchCode = conference
 	}
 	for _, name := range hackertracker.CollectionNames() {
-		items, err := client.Collection(ctx, fetchCode, name)
+		items, err := client.RawCollection(ctx, fetchCode, name)
 		if err != nil {
-			return hackertracker.Conference{}, nil, fmt.Errorf("fetch %s for %q: %w", name, fetchCode, err)
+			return nil, nil, fmt.Errorf("fetch %s for %q: %w", name, fetchCode, err)
 		}
 		raw[name] = items
 	}
@@ -250,18 +219,18 @@ func printHelp(w io.Writer) {
 	_, _ = fmt.Fprintln(w, `Usage:
   hackertracker conferences
   hackertracker fetch --conference <code> [--out <dir>]
-  hackertracker info-export --conference <code> [<code>...] [--out <dir>]
+  hackertracker info-export [--out <dir>] --conference <code> [<code>...]
 
 Examples:
   hackertracker conferences
   hackertracker fetch --conference defcon34 --out ./raw
   hackertracker info-export --conference defcon34 --out ./public/defcon34/data
-  hackertracker info-export --conference DCSG2026 DEFCON34 DEFCON33 --out ./public`)
+  hackertracker info-export --out ./public --conference DCSG2026 DEFCON34 DEFCON33`)
 }
 
 func printInfoExportHelp(w io.Writer) {
 	_, _ = fmt.Fprintln(w, `Usage:
-  hackertracker info-export --conference <code> [<code>...] [--out <dir>]
+  hackertracker info-export [--out <dir>] --conference <code> [<code>...]
 
 Options:
   --conference, -c <code>  Conference code, repeatable
