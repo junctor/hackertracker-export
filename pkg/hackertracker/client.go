@@ -1,9 +1,10 @@
 package hackertracker
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	firebase "firebase.google.com/go/v4"
@@ -55,8 +56,8 @@ func (c *Client) Conferences(ctx context.Context) ([]Conference, error) {
 		}
 		conferences = append(conferences, conf)
 	}
-	sort.Slice(conferences, func(i, j int) bool {
-		return conferences[i].Code < conferences[j].Code
+	slices.SortFunc(conferences, func(a, b Conference) int {
+		return cmp.Compare(a.Code, b.Code)
 	})
 	return conferences, nil
 }
@@ -73,6 +74,20 @@ func (c *Client) Conference(ctx context.Context, code string) (Conference, error
 		}
 	}
 	return Conference{}, fmt.Errorf("load conference %q: %w", code, err)
+}
+
+func (c *Client) RawConference(ctx context.Context, code string) (map[string]any, error) {
+	conf, err := c.rawConference(ctx, code)
+	if err == nil {
+		return conf, nil
+	}
+	upper := strings.ToUpper(code)
+	if upper != code {
+		if conf, upperErr := c.rawConference(ctx, upper); upperErr == nil {
+			return conf, nil
+		}
+	}
+	return nil, fmt.Errorf("load conference %q: %w", code, err)
 }
 
 func (c *Client) conference(ctx context.Context, code string) (Conference, error) {
@@ -100,6 +115,31 @@ func (c *Client) conference(ctx context.Context, code string) (Conference, error
 	return conf, nil
 }
 
+func (c *Client) rawConference(ctx context.Context, code string) (map[string]any, error) {
+	db, err := c.app.Firestore(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open Firestore client: %w", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("error closing Firestore client: %v\n", err)
+		}
+	}()
+
+	doc, err := db.Collection("conferences").Doc(code).Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	data, ok := rawFirestoreValue(doc.Data()).(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected conference data for %s", code)
+	}
+	if data["code"] == nil || data["code"] == "" {
+		data["code"] = code
+	}
+	return data, nil
+}
+
 func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName string) ([]map[string]any, error) {
 	db, err := c.app.Firestore(ctx)
 	if err != nil {
@@ -112,7 +152,7 @@ func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName 
 	}()
 
 	iter := db.Collection("conferences").Doc(conferenceCode).Collection(collectionName).Documents(ctx)
-	var out []map[string]any
+	out := []map[string]any{}
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -121,11 +161,36 @@ func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName 
 		if err != nil {
 			return nil, fmt.Errorf("iterate %s/%s: %w", conferenceCode, collectionName, err)
 		}
-		normalized, err := normalizeFirestoreValue(doc.Data())
-		if err != nil {
-			return nil, fmt.Errorf("normalize %s/%s/%s: %w", conferenceCode, collectionName, doc.Ref.ID, err)
+		out = append(out, doc.Data())
+	}
+	if err := sortCollection(out); err != nil {
+		return nil, fmt.Errorf("sort %s/%s: %w", conferenceCode, collectionName, err)
+	}
+	return out, nil
+}
+
+func (c *Client) RawCollection(ctx context.Context, conferenceCode, collectionName string) ([]map[string]any, error) {
+	db, err := c.app.Firestore(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("open Firestore client: %w", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("error closing Firestore client: %v\n", err)
 		}
-		data, ok := normalized.(map[string]any)
+	}()
+
+	iter := db.Collection("conferences").Doc(conferenceCode).Collection(collectionName).Documents(ctx)
+	out := []map[string]any{}
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("iterate %s/%s: %w", conferenceCode, collectionName, err)
+		}
+		data, ok := rawFirestoreValue(doc.Data()).(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("unexpected document data for %s/%s/%s", conferenceCode, collectionName, doc.Ref.ID)
 		}
