@@ -26,7 +26,7 @@ func Run(args []string, stdout, stderr io.Writer) error {
 		return runConferences(stdout)
 	case "fetch":
 		return runFetch(args[1:], stdout, stderr)
-	case "info-export":
+	case "info":
 		return runInfoExport(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -141,7 +141,7 @@ type infoExportOptions struct {
 }
 
 func parseInfoExportOptions(args []string, stderr io.Writer) (infoExportOptions, error) {
-	fs := flag.NewFlagSet("info-export", flag.ContinueOnError)
+	fs := flag.NewFlagSet("info", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {}
 	var conferences []string
@@ -219,18 +219,18 @@ func printHelp(w io.Writer) {
 	_, _ = fmt.Fprintln(w, `Usage:
   hackertracker conferences
   hackertracker fetch --conference <code> [--out <dir>]
-  hackertracker info-export [--out <dir>] --conference <code> [<code>...]
+  hackertracker info [--out <dir>] --conference <code> [<code>...]
 
 Examples:
   hackertracker conferences
   hackertracker fetch --conference defcon34 --out ./raw
-  hackertracker info-export --conference defcon34 --out ./public/defcon34/data
-  hackertracker info-export --out ./public --conference DCSG2026 DEFCON34 DEFCON33`)
+  hackertracker info --conference defcon34 --out ./public/defcon34/data
+  hackertracker info --out ./public --conference DCSG2026 DEFCON34 DEFCON33`)
 }
 
 func printInfoExportHelp(w io.Writer) {
 	_, _ = fmt.Fprintln(w, `Usage:
-  hackertracker info-export [--out <dir>] --conference <code> [<code>...]
+  hackertracker info [--out <dir>] --conference <code> [<code>...]
 
 Options:
   --conference, -c <code>  Conference code, repeatable

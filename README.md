@@ -1,14 +1,14 @@
 # Hacker Tracker Export
 
 Single-binary Go CLI for exporting Hacker Tracker Firestore data. This
-repository replaces the old JavaScript `info-export` pipeline and writes the
+repository replaces the old JavaScript `info` pipeline and writes the
 static JSON artifacts used by `info.defcon.org`.
 
 The command provides three subcommands:
 
 - `hackertracker conferences`: list available conferences from Firestore.
 - `hackertracker fetch`: fetch raw Hacker Tracker collections for debugging or auditing.
-- `hackertracker info-export`: export the React-facing `info.defcon.org` JSON dataset.
+- `hackertracker info`: export the React-facing `info.defcon.org` JSON dataset.
 
 ## Install
 
@@ -43,7 +43,7 @@ When working from this repository next to `hackertracker-info`, write directly
 to the app's static data directory:
 
 ```sh
-hackertracker info-export --conference DEFCON34 --out ../hackertracker-info/public/ht/defcon34
+hackertracker info --conference DEFCON34 --out ../hackertracker-info/public/ht/defcon34
 ```
 
 For multiple conferences, pass all conference codes in one command and make
@@ -51,7 +51,7 @@ For multiple conferences, pass all conference codes in one command and make
 lowercased subdirectory:
 
 ```sh
-hackertracker info-export --out ../hackertracker-info/public/ht --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026
+hackertracker info --out ../hackertracker-info/public/ht --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026
 ```
 
 That writes:
@@ -69,7 +69,7 @@ This is useful for local inspection or for staging artifacts before copying
 them into another checkout:
 
 ```sh
-hackertracker info-export --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026
+hackertracker info --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026
 ```
 
 ## Other Commands
@@ -86,12 +86,12 @@ Fetch raw Firestore collections for one conference:
 hackertracker fetch --conference DEFCON34 --out ./raw/defcon34
 ```
 
-Raw fetch output is separate from `info-export`. The old JavaScript exporter had
+Raw fetch output is separate from `info`. The old JavaScript exporter had
 an `--emit-raw` flag; this Go replacement uses `hackertracker fetch` instead.
 
 ## Output Contract
 
-`info-export` generates production artifacts only. On each run, it recreates the
+`info` generates production artifacts only. On each run, it recreates the
 generated directories below the target output directory so stale generated JSON
 is removed.
 
