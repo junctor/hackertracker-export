@@ -30,7 +30,11 @@ func (c *Client) Conferences(ctx context.Context) ([]Conference, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open Firestore client: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("error closing Firestore client: %v\n", err)
+		}
+	}()
 
 	iter := db.Collection("conferences").Documents(ctx)
 	var conferences []Conference
@@ -76,7 +80,11 @@ func (c *Client) conference(ctx context.Context, code string) (Conference, error
 	if err != nil {
 		return Conference{}, fmt.Errorf("open Firestore client: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("error closing Firestore client: %v\n", err)
+		}
+	}()
 
 	doc, err := db.Collection("conferences").Doc(code).Get(ctx)
 	if err != nil {
@@ -97,7 +105,11 @@ func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName 
 	if err != nil {
 		return nil, fmt.Errorf("open Firestore client: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("error closing Firestore client: %v\n", err)
+		}
+	}()
 
 	iter := db.Collection("conferences").Doc(conferenceCode).Collection(collectionName).Documents(ctx)
 	var out []map[string]any
