@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"maps"
 	"slices"
+	"strings"
 )
 
 type builtIndexes struct {
@@ -19,9 +20,11 @@ func buildIndexes(st *stores, timezone string) builtIndexes {
 	for _, eventID := range st.eventIDs {
 		event := st.eventsByID[eventID]
 		eventStarts[eventID] = timestampSeconds(stringValue(event["begin"]))
-		addToStringIndex(eventsByDay, eventDay(stringValue(event["begin"]), timezone), eventID)
+		if day := eventDay(stringValue(event["begin"]), timezone); day != "" {
+			eventsByDay[day] = append(eventsByDay[day], eventID)
+		}
 		for _, tagID := range intSlice(event["tagIds"]) {
-			addToStringIndex(eventsByTag, stringValue(tagID), eventID)
+			eventsByTag[stringValue(tagID)] = append(eventsByTag[stringValue(tagID)], eventID)
 		}
 	}
 	sortEventIndex(eventsByDay, eventStarts)
@@ -59,7 +62,7 @@ func buildScheduleEventViewModel(event map[string]any, st *stores, timezone stri
 	}
 	var speakers any
 	if len(speakerNames) > 0 {
-		speakers = joinComma(speakerNames)
+		speakers = strings.Join(speakerNames, ", ")
 	}
 	begin := stringValue(event["begin"])
 	end := stringValue(event["end"])
@@ -114,12 +117,10 @@ func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) 
 		announcements = append(announcements, st.articlesByID[articleID])
 	}
 	slices.SortFunc(announcements, func(a, b map[string]any) int {
-		ai := int64Value(a["updatedAtMs"])
-		aj := int64Value(b["updatedAtMs"])
-		if ai != aj {
-			return cmp.Compare(aj, ai)
-		}
-		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
+		return cmp.Or(
+			cmp.Compare(int64Value(b["updatedAtMs"]), int64Value(a["updatedAtMs"])),
+			cmp.Compare(intValue(a["id"]), intValue(b["id"])),
+		)
 	})
 
 	details := map[string]map[int]any{
@@ -163,7 +164,7 @@ func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) 
 		details["organizations"][id] = st.organizationsByID[id]
 	}
 	return map[string]any{
-		"announcementsList":  eventsAny(announcements),
+		"announcementsList":  announcements,
 		"bookmarkEventsById": bookmarkEventsByID,
 		"locationCards":      locationCards,
 		"scheduleDays":       scheduleDays,
@@ -198,7 +199,6 @@ func buildScheduleDaysFromEvents(events []map[string]any, modelsByEventID map[in
 	keys := slices.Sorted(maps.Keys(groups))
 	out := []any{}
 	for _, day := range keys {
-		sortEvents(groups[day])
 		models := modelsForEvents(groups[day], modelsByEventID)
 		if len(models) > 0 {
 			out = append(out, map[string]any{"day": day, "events": models})
@@ -220,12 +220,10 @@ func modelsForEvents(events []map[string]any, modelsByEventID map[int]map[string
 
 func sortEvents(events []map[string]any) {
 	slices.SortFunc(events, func(a, b map[string]any) int {
-		ai := timestampSeconds(stringValue(a["begin"]))
-		aj := timestampSeconds(stringValue(b["begin"]))
-		if ai != aj {
-			return cmp.Compare(ai, aj)
-		}
-		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
+		return cmp.Or(
+			cmp.Compare(timestampSeconds(stringValue(a["begin"])), timestampSeconds(stringValue(b["begin"]))),
+			cmp.Compare(intValue(a["id"]), intValue(b["id"])),
+		)
 	})
 }
 

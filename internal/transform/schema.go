@@ -168,22 +168,13 @@ func resolveUpdatedAtMs(updatedAt any, updatedTSZ, updatedAtStr string) *int64 {
 	return nil
 }
 
-func addToStringIndex(index map[string][]int, key string, value int) {
-	if key != "" {
-		index[key] = append(index[key], value)
-	}
-}
-
 func sortEventIndex(index map[string][]int, eventStarts map[int]int64) {
 	for key := range index {
 		slices.SortStableFunc(index[key], func(a, b int) int {
-			if eventStarts[a] != eventStarts[b] {
-				if eventStarts[a] < eventStarts[b] {
-					return -1
-				}
-				return 1
-			}
-			return cmp.Compare(a, b)
+			return cmp.Or(
+				cmp.Compare(eventStarts[a], eventStarts[b]),
+				cmp.Compare(a, b),
+			)
 		})
 	}
 }
@@ -197,8 +188,7 @@ func intFromInt64(value int64) (int, bool) {
 }
 
 func intFromUint64(value uint64) (int, bool) {
-	maxInt := uint64(^uint(0) >> 1)
-	if value > maxInt {
+	if value > uint64(math.MaxInt) {
 		return 0, false
 	}
 	return int(value), true

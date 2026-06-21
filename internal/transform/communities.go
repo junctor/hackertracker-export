@@ -23,10 +23,10 @@ func buildViews(st *stores) map[string]any {
 	slices.SortFunc(organizationsCardsList, func(left, right map[string]any) int {
 		a := left["card"].(map[string]any)
 		b := right["card"].(map[string]any)
-		if stringValue(a["name"]) != stringValue(b["name"]) {
-			return alphaCompare(stringValue(a["name"]), stringValue(b["name"]))
-		}
-		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
+		return cmp.Or(
+			alphaCompare(stringValue(a["name"]), stringValue(b["name"])),
+			cmp.Compare(intValue(a["id"]), intValue(b["id"])),
+		)
 	})
 	organizationsCards := map[string]any{}
 	for _, entry := range organizationsCardsList {
@@ -66,10 +66,10 @@ func buildViews(st *stores) map[string]any {
 	slices.SortFunc(peopleCards, func(left, right any) int {
 		a := left.(map[string]any)
 		b := right.(map[string]any)
-		if stringValue(a["name"]) != stringValue(b["name"]) {
-			return alphaCompare(stringValue(a["name"]), stringValue(b["name"]))
-		}
-		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
+		return cmp.Or(
+			alphaCompare(stringValue(a["name"]), stringValue(b["name"])),
+			cmp.Compare(intValue(a["id"]), intValue(b["id"])),
+		)
 	})
 
 	tagTypesBrowse := buildTagTypesBrowse(st)
@@ -118,21 +118,17 @@ func buildTagTypesBrowse(st *stores) []any {
 			"id":        tagType["id"],
 			"label":     tagType["label"],
 			"sortOrder": tagType["sortOrder"],
-			"tags":      eventsAny(tags),
+			"tags":      tags,
 		})
 	}
 	slices.SortFunc(out, func(left, right any) int {
 		a := left.(map[string]any)
 		b := right.(map[string]any)
-		ao := intValue(a["sortOrder"])
-		bo := intValue(b["sortOrder"])
-		if ao != bo {
-			return cmp.Compare(ao, bo)
-		}
-		if stringValue(a["label"]) != stringValue(b["label"]) {
-			return cmp.Compare(stringValue(a["label"]), stringValue(b["label"]))
-		}
-		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
+		return cmp.Or(
+			cmp.Compare(intValue(a["sortOrder"]), intValue(b["sortOrder"])),
+			cmp.Compare(stringValue(a["label"]), stringValue(b["label"])),
+			cmp.Compare(intValue(a["id"]), intValue(b["id"])),
+		)
 	})
 	return out
 }
@@ -150,12 +146,10 @@ func buildDocumentsList(st *stores) []any {
 	slices.SortFunc(out, func(left, right any) int {
 		a := left.(map[string]any)
 		b := right.(map[string]any)
-		au := int64Value(a["updatedAtMs"])
-		bu := int64Value(b["updatedAtMs"])
-		if au != bu {
-			return cmp.Compare(bu, au)
-		}
-		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
+		return cmp.Or(
+			cmp.Compare(int64Value(b["updatedAtMs"]), int64Value(a["updatedAtMs"])),
+			cmp.Compare(intValue(a["id"]), intValue(b["id"])),
+		)
 	})
 	return out
 }
@@ -171,15 +165,15 @@ func buildContentCards(st *stores) []any {
 			}
 		}
 		slices.SortFunc(tags, compareTags)
-		out = append(out, map[string]any{"id": item["id"], "tags": eventsAny(tags), "title": item["title"]})
+		out = append(out, map[string]any{"id": item["id"], "tags": tags, "title": item["title"]})
 	}
 	slices.SortFunc(out, func(left, right any) int {
 		a := left.(map[string]any)
 		b := right.(map[string]any)
-		if stringValue(a["title"]) != stringValue(b["title"]) {
-			return alphaCompare(stringValue(a["title"]), stringValue(b["title"]))
-		}
-		return cmp.Compare(intValue(a["id"]), intValue(b["id"]))
+		return cmp.Or(
+			alphaCompare(stringValue(a["title"]), stringValue(b["title"])),
+			cmp.Compare(intValue(a["id"]), intValue(b["id"])),
+		)
 	})
 	return out
 }
@@ -318,25 +312,6 @@ func intSlice(value any) []int {
 	}
 }
 
-func eventsAny[T any](items []T) []any {
-	out := make([]any, len(items))
-	for i, item := range items {
-		out[i] = item
-	}
-	return out
-}
-
-func nullableOrderValue(value any) *int {
-	if value == nil {
-		return nil
-	}
-	id, ok := normalizeID(value)
-	if !ok {
-		return nil
-	}
-	return &id
-}
-
 func nonEmptyString(value any, fallback string) string {
 	if value == nil {
 		return fallback
@@ -346,8 +321,4 @@ func nonEmptyString(value any, fallback string) string {
 		return fallback
 	}
 	return text
-}
-
-func joinComma(values []string) string {
-	return strings.Join(values, ", ")
 }

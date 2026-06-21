@@ -92,37 +92,29 @@ func sortCollection(items []map[string]any) error {
 		if ok {
 			continue
 		}
-		key, err := collectionSortKey(item)
+		data, err := json.Marshal(item)
 		if err != nil {
 			return fmt.Errorf("document %d: %w", i, err)
 		}
-		sortable[i].key = key
+		sortable[i].key = string(data)
 	}
 
 	slices.SortStableFunc(sortable, func(a, b sortableItem) int {
-		if a.hasID && b.hasID {
-			return cmp.Compare(a.id, b.id)
-		}
-		if a.hasID {
-			return -1
-		}
-		if b.hasID {
+		if a.hasID != b.hasID {
+			if a.hasID {
+				return -1
+			}
 			return 1
 		}
-		return cmp.Compare(a.key, b.key)
+		return cmp.Or(
+			cmp.Compare(a.id, b.id),
+			cmp.Compare(a.key, b.key),
+		)
 	})
 	for i := range sortable {
 		items[i] = sortable[i].item
 	}
 	return nil
-}
-
-func collectionSortKey(item map[string]any) (string, error) {
-	data, err := json.Marshal(item)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
 }
 
 func idString(value any) (string, bool) {

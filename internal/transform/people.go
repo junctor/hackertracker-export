@@ -28,8 +28,8 @@ func buildContentDetail(content map[string]any, st *stores, allEvents []map[stri
 		slices.SortFunc(entries, func(left, right any) int {
 			a := left.(map[string]any)
 			b := right.(map[string]any)
-			ao := nullableOrderValue(a["sortOrder"])
-			bo := nullableOrderValue(b["sortOrder"])
+			ao := normalizeOrder(a["sortOrder"])
+			bo := normalizeOrder(b["sortOrder"])
 			if (ao == nil) != (bo == nil) {
 				if ao != nil {
 					return -1
@@ -65,7 +65,7 @@ func buildContentDetail(content map[string]any, st *stores, allEvents []map[stri
 		"content":   content,
 		"locations": uniqueLocationsForEvents(sessions, st),
 		"people":    people,
-		"sessions":  eventsAny(sessions),
+		"sessions":  sessions,
 		"tags":      entitiesForIDs(intSlice(content["tagIds"]), st.tagsByID),
 	}
 }
@@ -105,7 +105,7 @@ func buildPersonDetail(person map[string]any, st *stores, allEvents []map[string
 	}
 	sortEvents(events)
 	return map[string]any{
-		"events":    eventsAny(events),
+		"events":    events,
 		"locations": uniqueLocationsForEvents(events, st),
 		"person":    person,
 	}
