@@ -297,7 +297,7 @@ func printUsage() {
 Examples:
   hackertracker conferences
   hackertracker fetch --conference DEFCON34
-  hackertracker fetch --conference DEFCON34 --collection events
+  hackertracker fetch --conference DEFCON34 --collection content
   hackertracker fetch --conference DEFCON34 --document conference --stdout
   hackertracker fetch --conference DEFCON34 --all
   hackertracker info --conference defcon34 --out ./public/defcon34/data
