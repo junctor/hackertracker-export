@@ -21,7 +21,7 @@ type Artifacts struct {
 
 var generatedDirs = [...]string{"entities", "indexes", "views", "details", "derived"}
 
-func WriteJSON(path string, value any) error {
+func writeJSON(path string, value any) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create output directory %q: %w", dir, err)
@@ -57,7 +57,7 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	written := []string{}
 	write := func(rel string, value any) error {
 		path := filepath.Join(outDir, rel)
-		if err := WriteJSON(path, value); err != nil {
+		if err := writeJSON(path, value); err != nil {
 			return fmt.Errorf("write %s: %w", rel, err)
 		}
 		written = append(written, path)
@@ -67,7 +67,7 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	if err := write("manifest.json", artifacts.Manifest); err != nil {
 		return nil, err
 	}
-	for _, name := range requiredEntityNames() {
+	for _, name := range []string{"articles", "content", "documents", "events", "locations", "organizations", "people", "tags", "tagTypes"} {
 		value, ok := artifacts.Entities[name]
 		if !ok {
 			return nil, fmt.Errorf("missing generated artifact: %s", name)
@@ -85,7 +85,18 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 			return nil, err
 		}
 	}
-	for _, name := range requiredViewNames() {
+	for _, name := range []string{
+		"announcementsList",
+		"bookmarkEventsById",
+		"contentCards",
+		"documentsList",
+		"locationCards",
+		"organizationsCards",
+		"peopleCards",
+		"searchData",
+		"scheduleDays",
+		"tagTypesBrowse",
+	} {
 		value, ok := artifacts.Views[name]
 		if !ok {
 			return nil, fmt.Errorf("missing generated artifact: %s", name)
@@ -113,23 +124,4 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	}
 	slices.Sort(written)
 	return written, nil
-}
-
-func requiredEntityNames() []string {
-	return []string{"articles", "content", "documents", "events", "locations", "organizations", "people", "tags", "tagTypes"}
-}
-
-func requiredViewNames() []string {
-	return []string{
-		"announcementsList",
-		"bookmarkEventsById",
-		"contentCards",
-		"documentsList",
-		"locationCards",
-		"organizationsCards",
-		"peopleCards",
-		"searchData",
-		"scheduleDays",
-		"tagTypesBrowse",
-	}
 }
