@@ -14,11 +14,6 @@ import (
 	"github.com/junctor/hackertracker-export/pkg/hackertracker"
 )
 
-type BuildOptions struct {
-	SchemaVersion  int
-	BuildTimestamp time.Time
-}
-
 type stores struct {
 	entities map[string]any
 
@@ -43,13 +38,7 @@ type stores struct {
 	articleIDs      []int
 }
 
-func Build(conf hackertracker.Conference, data hackertracker.SourceData, opts BuildOptions) (export.Artifacts, error) {
-	if opts.SchemaVersion == 0 {
-		opts.SchemaVersion = 2
-	}
-	if opts.BuildTimestamp.IsZero() {
-		opts.BuildTimestamp = time.Now().UTC()
-	}
+func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export.Artifacts, error) {
 	if conf.Timezone == "" {
 		return export.Artifacts{}, fmt.Errorf("missing conference timezone")
 	}
@@ -67,10 +56,10 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData, opts Bu
 
 	return export.Artifacts{
 		Manifest: map[string]any{
-			"buildTimestamp": opts.BuildTimestamp.UTC().Format("2006-01-02T15:04:05.000Z"),
+			"buildTimestamp": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 			"code":           conf.Code,
 			"name":           conf.Name,
-			"schemaVersion":  opts.SchemaVersion,
+			"schemaVersion":  2,
 			"timezone":       conf.Timezone,
 		},
 		Entities: st.entities,
@@ -197,10 +186,18 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 			return nil, fmt.Errorf("article missing id")
 		}
 		model := map[string]any{
-			"id":          id,
-			"name":        article.Name,
-			"text":        nullableStringPtr(article.Text),
-			"updatedAtMs": nullableInt64(resolveUpdatedAtMs(article.UpdatedAt, article.UpdatedTSZ, article.UpdatedAtStr)),
+			"id":   id,
+			"name": article.Name,
+		}
+		if article.Text != nil {
+			model["text"] = *article.Text
+		} else {
+			model["text"] = nil
+		}
+		if updated := resolveUpdatedAtMs(article.UpdatedAt, article.UpdatedTSZ, article.UpdatedAtStr); updated != nil {
+			model["updatedAtMs"] = *updated
+		} else {
+			model["updatedAtMs"] = nil
 		}
 		putEntity(st.articlesByID, &st.articleIDs, model)
 	}
@@ -550,13 +547,6 @@ func nullableString(value string) any {
 	return value
 }
 
-func nullableStringPtr(value *string) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
 func nullableInt(value any) any {
 	if id, ok := normalizeID(value); ok {
 		return id
@@ -565,13 +555,6 @@ func nullableInt(value any) any {
 }
 
 func nullableIntPtr(value *int) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func nullableInt64(value *int64) any {
 	if value == nil {
 		return nil
 	}
@@ -599,19 +582,13 @@ func linksToAny(links []hackertracker.Link) []any {
 func compareTags(a, b map[string]any) int {
 	ao, _ := normalizeID(a["sortOrder"])
 	bo, _ := normalizeID(b["sortOrder"])
-	if ao != bo {
-		return cmp.Compare(ao, bo)
-	}
-	if c := alphaCompare(fmt.Sprint(a["label"]), fmt.Sprint(b["label"])); c != 0 {
-		return c
-	}
 	ai, _ := normalizeID(a["id"])
 	bi, _ := normalizeID(b["id"])
-	return cmp.Compare(ai, bi)
-}
-
-func alphaLess(a, b string) bool {
-	return alphaCompare(a, b) < 0
+	return cmp.Or(
+		cmp.Compare(ao, bo),
+		alphaCompare(fmt.Sprint(a["label"]), fmt.Sprint(b["label"])),
+		cmp.Compare(ai, bi),
+	)
 }
 
 func alphaCompare(a, b string) int {
