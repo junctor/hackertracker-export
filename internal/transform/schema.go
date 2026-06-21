@@ -62,14 +62,6 @@ func normalizeID(value any) (int, bool) {
 	}
 }
 
-func normalizeOrder(value any) *int {
-	id, ok := normalizeID(value)
-	if !ok {
-		return nil
-	}
-	return &id
-}
-
 func uniqueIDs[T any](ids []T, valid map[int]bool) []int {
 	seen := map[int]bool{}
 	out := []int{}
@@ -117,7 +109,7 @@ func timestampSeconds(value string) int64 {
 	return t.Unix()
 }
 
-func eventDay(value, timezone string) string {
+func sessionDay(value, timezone string) string {
 	t, ok := parseTime(value)
 	if !ok {
 		return ""
@@ -129,35 +121,28 @@ func eventDay(value, timezone string) string {
 	return t.In(loc).Format("2006-01-02")
 }
 
-func eventTimeTable(value string, showTZ bool, timezone string) string {
+func sessionTimeTable(value string, showTZ bool, timezone string) string {
 	t, ok := parseTime(value)
 	if !ok {
 		return ""
 	}
-	loc, err := time.LoadLocation(timezone)
-	if err != nil {
-		return ""
+	if timezone != "" {
+		loc, err := time.LoadLocation(timezone)
+		if err != nil {
+			return ""
+		}
+		t = t.In(loc)
 	}
 	if showTZ {
-		return t.In(loc).Format("15:04 MST")
+		return t.Format("15:04 MST")
 	}
-	return t.In(loc).Format("15:04")
+	return t.Format("15:04")
 }
 
-func resolveUpdatedAtMs(updatedAt any, updatedTSZ, updatedAtStr string) *int64 {
-	if updatedAt != nil {
-		switch v := updatedAt.(type) {
-		case map[string]any:
-			if seconds, ok := normalizeID(v["seconds"]); ok {
-				ms := int64(seconds) * 1000
-				return &ms
-			}
-		case string:
-			if t, ok := parseTime(v); ok {
-				ms := t.UnixMilli()
-				return &ms
-			}
-		}
+func resolveUpdatedAtMs(updatedAt time.Time, updatedTSZ, updatedAtStr string) *int64 {
+	if !updatedAt.IsZero() {
+		ms := updatedAt.UnixMilli()
+		return &ms
 	}
 	for _, value := range []string{updatedTSZ, updatedAtStr} {
 		if t, ok := parseTime(value); ok {
@@ -168,15 +153,53 @@ func resolveUpdatedAtMs(updatedAt any, updatedTSZ, updatedAtStr string) *int64 {
 	return nil
 }
 
-func sortEventIndex(index map[string][]int, eventStarts map[int]int64) {
+func sortSessionIndex(index map[string][]int, sessionStarts map[int]int64) {
 	for key := range index {
 		slices.SortStableFunc(index[key], func(a, b int) int {
 			return cmp.Or(
-				cmp.Compare(eventStarts[a], eventStarts[b]),
+				cmp.Compare(sessionStarts[a], sessionStarts[b]),
 				cmp.Compare(a, b),
 			)
 		})
 	}
+}
+
+func timestampString(value string, fallback time.Time) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	if fallback.IsZero() {
+		return ""
+	}
+	return fallback.Format(time.RFC3339Nano)
+}
+
+func stringPtrOrNil(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func intPtrFromValue(value any) *int {
+	id, ok := normalizeID(value)
+	if !ok {
+		return nil
+	}
+	return &id
+}
+
+func idKey(id int) string {
+	return strconv.Itoa(id)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func intFromInt64(value int64) (int, bool) {
