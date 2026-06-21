@@ -19,13 +19,12 @@ func DecodeSourceData(raw map[string][]map[string]any) (SourceData, error) {
 	if err := decodeCollection(raw["documents"], &data.Documents); err != nil {
 		return data, fmt.Errorf("documents: %w", err)
 	}
-	if err := decodeCollection(raw["events"], &data.Events); err != nil {
-		return data, fmt.Errorf("events: %w", err)
-	}
 	if err := decodeCollection(raw["locations"], &data.Locations); err != nil {
 		return data, fmt.Errorf("locations: %w", err)
 	}
-	data.Menus = raw["menus"]
+	if err := decodeCollection(raw["menus"], &data.Menus); err != nil {
+		return data, fmt.Errorf("menus: %w", err)
+	}
 	if err := decodeCollection(raw["organizations"], &data.Organizations); err != nil {
 		return data, fmt.Errorf("organizations: %w", err)
 	}
