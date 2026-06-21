@@ -67,7 +67,7 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	if err := write("manifest.json", artifacts.Manifest); err != nil {
 		return nil, err
 	}
-	for _, name := range []string{"articles", "content", "documents", "events", "locations", "organizations", "people", "tags", "tagTypes"} {
+	for _, name := range []string{"articles", "content", "documents", "locations", "organizations", "people", "sessions", "tags", "tagTypes"} {
 		value, ok := artifacts.Entities[name]
 		if !ok {
 			return nil, fmt.Errorf("missing generated artifact: %s", name)
@@ -76,7 +76,7 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 			return nil, err
 		}
 	}
-	for _, name := range []string{"eventsByDay", "eventsByTag"} {
+	for _, name := range []string{"sessionsByDay", "sessionsByTag"} {
 		value, ok := artifacts.Indexes[name]
 		if !ok {
 			return nil, fmt.Errorf("missing generated artifact: %s", name)
@@ -87,7 +87,7 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	}
 	for _, name := range []string{
 		"announcementsList",
-		"bookmarkEventsById",
+		"bookmarkSessionsById",
 		"contentCards",
 		"documentsList",
 		"locationCards",
