@@ -3,6 +3,7 @@ package hackertracker
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -212,4 +213,8 @@ var collections = [...]string{
 	"organizations",
 	"speakers",
 	"tagtypes",
+}
+
+func CollectionNames() []string {
+	return slices.Clone(collections[:])
 }
