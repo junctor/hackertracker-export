@@ -1,99 +1,18 @@
-# Hacker Tracker Export
-
-Single-binary Go CLI for exporting Hacker Tracker Firestore data. This
-repository replaces the old JavaScript `info` pipeline and writes the
-static JSON artifacts used by `info.defcon.org`.
-
-The command provides three subcommands:
-
-- `hackertracker conferences`: list available conferences from Firestore.
-- `hackertracker fetch`: fetch raw Hacker Tracker collections for debugging or auditing.
-- `hackertracker info`: export the React-facing `info.defcon.org` JSON dataset.
-
-## Install
-
-From this repository, run the CLI directly:
-
-```sh
-go run ./cmd/hackertracker --help
-```
-
-Or install a `hackertracker` binary:
-
-```sh
-go install ./cmd/hackertracker
-hackertracker --help
-```
-
-## Export for info.defcon.org
-
-The `info.defcon.org` web app expects each conference dataset under:
-
-```text
-public/ht/<lowercase-conference-code>/
-  manifest.json
-  derived/
-  details/
-  entities/
-  indexes/
-  views/
-```
-
-When working from this repository next to `hackertracker-info`, write directly
-to the app's static data directory:
-
-```sh
-hackertracker info --conference DEFCON34 --out ../hackertracker-info/public/ht/defcon34
-```
-
-For multiple conferences, pass all conference codes in one command and make
-`--out` the root `public/ht` directory. Each conference is written to a
-lowercased subdirectory:
-
-```sh
-hackertracker info --out ../hackertracker-info/public/ht --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026
-```
-
-That writes:
-
-```text
-../hackertracker-info/public/ht/dcsg2026/
-../hackertracker-info/public/ht/defcon34/
-../hackertracker-info/public/ht/defcon33/
-../hackertracker-info/public/ht/defconbahrain2025/
-../hackertracker-info/public/ht/dcme2026/
-```
-
-If `--out` is omitted, exports go to `./out/ht/<lowercase-conference-code>/`.
-This is useful for local inspection or for staging artifacts before copying
-them into another checkout:
-
-```sh
-hackertracker info --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026
-```
-
-## Other Commands
-
-List available conferences:
-
-```sh
-hackertracker conferences
-```
-
-Fetch raw Firestore collections for one conference:
-
-```sh
-hackertracker fetch --conference DEFCON34 --out ./raw/defcon34
-```
-
-Raw fetch output is separate from `info`. The old JavaScript exporter had
-an `--emit-raw` flag; this Go replacement uses `hackertracker fetch` instead.
-
 ## Output Contract
 
 `info` generates production artifacts only. On each run, it recreates the
 generated directories below the target output directory so stale generated JSON
 is removed.
+
+The exporter uses the Hacker Tracker v2 model internally:
+
+- `content` is the canonical talk, workshop, demo, or activity record.
+- `session` is the scheduled occurrence of content at a time and location.
+
+For compatibility with existing `info.defcon.org` consumers, some generated
+artifact filenames still use the legacy `event` naming. These files contain
+session data and should be treated as compatibility aliases until the web app is
+fully migrated.
 
 Required artifacts include:
 
@@ -103,6 +22,7 @@ Required artifacts include:
 - `entities/content.json`
 - `entities/documents.json`
 - `entities/events.json`
+- `entities/sessions.json`
 - `entities/locations.json`
 - `entities/organizations.json`
 - `entities/people.json`
@@ -110,8 +30,11 @@ Required artifacts include:
 - `entities/tagTypes.json`
 - `indexes/eventsByDay.json`
 - `indexes/eventsByTag.json`
+- `indexes/sessionsByDay.json`
+- `indexes/sessionsByTag.json`
 - `views/announcementsList.json`
 - `views/bookmarkEventsById.json`
+- `views/bookmarkSessionsById.json`
 - `views/contentCards.json`
 - `views/documentsList.json`
 - `views/locationCards.json`
@@ -126,6 +49,15 @@ Required artifacts include:
 - `details/organizations/<id>.json`
 - `details/people/<id>.json`
 - `details/tags/<id>.json`
+
+Compatibility aliases:
+
+| Legacy artifact                 | New artifact                      | Notes                                                                |
+| ------------------------------- | --------------------------------- | -------------------------------------------------------------------- |
+| `entities/events.json`          | `entities/sessions.json`          | Same session records, legacy filename retained for existing clients. |
+| `indexes/eventsByDay.json`      | `indexes/sessionsByDay.json`      | Day index over sessions.                                             |
+| `indexes/eventsByTag.json`      | `indexes/sessionsByTag.json`      | Tag index over sessions.                                             |
+| `views/bookmarkEventsById.json` | `views/bookmarkSessionsById.json` | Bookmark-ready session view models.                                  |
 
 Every entity file follows the same IndexedDB-friendly shape:
 
@@ -152,6 +84,8 @@ runtime.
 - Views are minimal UI-ready projections.
 - Indexes are query accelerators keyed by day or tag.
 - Detail files are static per-record JSON documents for route-level loading.
+- Content records describe what something is.
+- Session records describe when and where content happens.
 - Schedule day bucketing uses the conference's IANA timezone from Firestore.
 - Generated IDs, references, ordering, and paths are deterministic.
 
@@ -169,27 +103,3 @@ Expected client behavior:
 2. Compare `buildTimestamp` to the version stored in IndexedDB.
 3. If changed or missing locally, download the required production artifacts.
 4. Use IndexedDB for subsequent queries.
-
-## Firebase Access
-
-The exporter reads the public Hacker Tracker Firestore project with the Firebase
-Go SDK using `option.WithoutAuthentication()`. No credential loading, REST
-fallback, or custom auth flow is implemented.
-
-If Firestore rejects unauthenticated access in an environment, the command fails
-loudly.
-
-## Development
-
-Check that the binary builds:
-
-```sh
-go build ./cmd/hackertracker
-```
-
-Use a writable Go build cache if your environment restricts the default cache
-location:
-
-```sh
-GOCACHE=/tmp/hackertracker-go-build go build ./cmd/hackertracker
-```
