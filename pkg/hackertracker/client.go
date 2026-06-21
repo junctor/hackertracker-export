@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -33,7 +34,7 @@ func (c *Client) Conferences(ctx context.Context) ([]Conference, error) {
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			fmt.Printf("error closing Firestore client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error closing Firestore client: %v\n", err)
 		}
 	}()
 
@@ -97,7 +98,7 @@ func (c *Client) conference(ctx context.Context, code string) (Conference, error
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			fmt.Printf("error closing Firestore client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error closing Firestore client: %v\n", err)
 		}
 	}()
 
@@ -122,7 +123,7 @@ func (c *Client) rawConference(ctx context.Context, code string) (map[string]any
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			fmt.Printf("error closing Firestore client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error closing Firestore client: %v\n", err)
 		}
 	}()
 
@@ -147,7 +148,7 @@ func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName 
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			fmt.Printf("error closing Firestore client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error closing Firestore client: %v\n", err)
 		}
 	}()
 
@@ -176,7 +177,7 @@ func (c *Client) RawCollection(ctx context.Context, conferenceCode, collectionNa
 	}
 	defer func() {
 		if err := db.Close(); err != nil {
-			fmt.Printf("error closing Firestore client: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error closing Firestore client: %v\n", err)
 		}
 	}()
 
@@ -202,10 +203,10 @@ func (c *Client) RawCollection(ctx context.Context, conferenceCode, collectionNa
 	return out, nil
 }
 
-func (c *Client) SourceData(ctx context.Context, conferenceCode string) (Conference, SourceData, map[string][]map[string]any, error) {
+func (c *Client) SourceData(ctx context.Context, conferenceCode string) (Conference, SourceData, error) {
 	conf, err := c.Conference(ctx, conferenceCode)
 	if err != nil {
-		return Conference{}, SourceData{}, nil, err
+		return Conference{}, SourceData{}, err
 	}
 	fetchCode := conf.Code
 	if fetchCode == "" {
@@ -215,13 +216,13 @@ func (c *Client) SourceData(ctx context.Context, conferenceCode string) (Confere
 	for _, name := range collections {
 		items, err := c.Collection(ctx, fetchCode, name)
 		if err != nil {
-			return Conference{}, SourceData{}, nil, fmt.Errorf("fetch %s: %w", name, err)
+			return Conference{}, SourceData{}, fmt.Errorf("fetch %s: %w", name, err)
 		}
 		raw[name] = items
 	}
 	data, err := DecodeSourceData(raw)
 	if err != nil {
-		return Conference{}, SourceData{}, nil, fmt.Errorf("decode source data for %q: %w", fetchCode, err)
+		return Conference{}, SourceData{}, fmt.Errorf("decode source data for %q: %w", fetchCode, err)
 	}
-	return conf, data, raw, nil
+	return conf, data, nil
 }
