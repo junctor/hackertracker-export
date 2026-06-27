@@ -141,7 +141,7 @@ func (c *Client) rawConference(ctx context.Context, code string) (map[string]any
 	return data, nil
 }
 
-func (c *Client) Collection(ctx context.Context, conferenceCode, collectionName string) ([]map[string]any, error) {
+func (c *Client) collection(ctx context.Context, conferenceCode, collectionName string) ([]map[string]any, error) {
 	db, err := c.app.Firestore(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open Firestore client: %w", err)
@@ -212,15 +212,15 @@ func (c *Client) SourceData(ctx context.Context, conferenceCode string) (Confere
 	if fetchCode == "" {
 		fetchCode = conferenceCode
 	}
-	raw := make(map[string][]map[string]any, len(collections))
-	for _, name := range collections {
-		items, err := c.Collection(ctx, fetchCode, name)
+	raw := map[string][]map[string]any{}
+	for _, collection := range RawCollections {
+		items, err := c.collection(ctx, fetchCode, collection)
 		if err != nil {
-			return Conference{}, SourceData{}, fmt.Errorf("fetch %s: %w", name, err)
+			return Conference{}, SourceData{}, fmt.Errorf("fetch %s: %w", collection, err)
 		}
-		raw[name] = items
+		raw[collection] = items
 	}
-	data, err := DecodeSourceData(raw)
+	data, err := decodeSourceData(raw)
 	if err != nil {
 		return Conference{}, SourceData{}, fmt.Errorf("decode source data for %q: %w", fetchCode, err)
 	}
