@@ -15,18 +15,6 @@ import (
 	"github.com/junctor/hackertracker-export/pkg/hackertracker"
 )
 
-var rawCollections = []string{
-	"articles",
-	"content",
-	"documents",
-	"locations",
-	"organizations",
-	"people",
-	"sessions",
-	"tags",
-	"tagTypes",
-}
-
 type fetchOptions struct {
 	conference string
 	outDir     string
@@ -54,11 +42,13 @@ func Run(args []string) error {
 func runConferences(args []string) error {
 	fs := flag.NewFlagSet("conferences", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `Usage:
+		if _, err := fmt.Fprint(fs.Output(), `Usage:
   hackertracker conferences
 
 Print available HackerTracker conferences as JSON.
-`)
+`); err != nil {
+			return
+		}
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -107,14 +97,10 @@ func runFetch(args []string) error {
 		return runFetchCollection("locations", args[1:])
 	case "organizations":
 		return runFetchCollection("organizations", args[1:])
-	case "people":
-		return runFetchCollection("people", args[1:])
-	case "sessions":
-		return runFetchCollection("sessions", args[1:])
-	case "tags":
-		return runFetchCollection("tags", args[1:])
-	case "tagTypes":
-		return runFetchCollection("tagTypes", args[1:])
+	case "speakers":
+		return runFetchCollection("speakers", args[1:])
+	case "tagtypes":
+		return runFetchCollection("tagtypes", args[1:])
 	case "all":
 		return runFetchAll(args[1:])
 	default:
@@ -148,8 +134,8 @@ func runFetchConference(args []string) error {
 	return writeOrPrintRaw("conference", conf, rawOutputDir(opts), opts.stdout)
 }
 
-func runFetchCollection(name string, args []string) error {
-	opts, err := parseFetchOptions("fetch "+name, args)
+func runFetchCollection(target string, args []string) error {
+	opts, err := parseFetchOptions("fetch "+target, args)
 	if err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -172,12 +158,12 @@ func runFetchCollection(name string, args []string) error {
 
 	fetchCode := conferenceFetchCode(conf, opts.conference)
 
-	value, err := client.RawCollection(ctx, fetchCode, name)
+	value, err := client.RawCollection(ctx, fetchCode, target)
 	if err != nil {
-		return fmt.Errorf("fetch %s for %q: %w", name, fetchCode, err)
+		return fmt.Errorf("fetch %s for %q: %w", target, fetchCode, err)
 	}
 
-	return writeOrPrintRaw(name, value, rawOutputDir(opts), opts.stdout)
+	return writeOrPrintRaw(target, value, rawOutputDir(opts), opts.stdout)
 }
 
 func runFetchAll(args []string) error {
@@ -205,20 +191,20 @@ func runFetchAll(args []string) error {
 	fetchCode := conferenceFetchCode(conf, opts.conference)
 	rawOutDir := rawOutputDir(opts)
 
-	collections := map[string][]map[string]any{}
+	rawByCollection := map[string][]map[string]any{}
 
-	for _, name := range rawCollections {
-		items, err := client.RawCollection(ctx, fetchCode, name)
+	for _, collection := range hackertracker.RawCollections {
+		items, err := client.RawCollection(ctx, fetchCode, collection)
 		if err != nil {
-			return fmt.Errorf("fetch %s for %q: %w", name, fetchCode, err)
+			return fmt.Errorf("fetch %s for %q: %w", collection, fetchCode, err)
 		}
-		collections[name] = items
+		rawByCollection[collection] = items
 	}
 
 	if opts.stdout {
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{
 			"conference":  conf,
-			"collections": collections,
+			"collections": rawByCollection,
 		})
 	}
 
@@ -227,9 +213,9 @@ func runFetchAll(args []string) error {
 	}
 
 	count := 1
-	for _, name := range rawCollections {
-		if err := writeRawJSON(filepath.Join(rawOutDir, name+".json"), collections[name]); err != nil {
-			return fmt.Errorf("write raw collection %q: %w", name, err)
+	for _, collection := range hackertracker.RawCollections {
+		if err := writeRawJSON(filepath.Join(rawOutDir, collection+".json"), rawByCollection[collection]); err != nil {
+			return fmt.Errorf("write raw collection %q: %w", collection, err)
 		}
 		count++
 	}
@@ -247,11 +233,13 @@ func parseFetchOptions(command string, args []string) (fetchOptions, error) {
 	fs.BoolVar(&opts.stdout, "stdout", false, "print JSON to stdout")
 
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `Usage:
+		if _, err := fmt.Fprintf(fs.Output(), `Usage:
   hackertracker %s --conference <code> [--stdout] [--out <dir>]
 
 Options:
-`, command)
+`, command); err != nil {
+			return
+		}
 		fs.PrintDefaults()
 	}
 
@@ -286,12 +274,14 @@ func runInfoExport(args []string) error {
 	outDir := fs.String("out", "", "output directory")
 
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), `Usage:
+		if _, err := fmt.Fprint(fs.Output(), `Usage:
   hackertracker info [--out <dir>] --conference <code> [--conference <code>]
   hackertracker info [--out <dir>] --conference <code> [<code>...]
 
 Options:
-`)
+`); err != nil {
+			return
+		}
 		fs.PrintDefaults()
 	}
 
@@ -430,18 +420,16 @@ Fetch targets:
   documents
   locations
   organizations
-  people
-  sessions
-  tags
-  tagTypes
+  speakers
+  tagtypes
   all
 
 Examples:
   hackertracker conferences
   hackertracker fetch conference --conference DEFCON34 --stdout
   hackertracker fetch content --conference DEFCON34
-  hackertracker fetch sessions --conference DEFCON34
-  hackertracker fetch tagTypes --conference DEFCON34
+  hackertracker fetch speakers --conference DEFCON34
+  hackertracker fetch tagtypes --conference DEFCON34
   hackertracker fetch all --conference DEFCON34
   hackertracker info --conference DEFCON34 --out ./out/ht/defcon34
   hackertracker info --out ./out/ht --conference DCSG2026 --conference DEFCON34`)
@@ -458,16 +446,15 @@ Targets:
   documents
   locations
   organizations
-  people
-  sessions
-  tags
-  tagTypes
+  speakers
+  tagtypes
   all
 
 Examples:
   hackertracker fetch conference --conference DEFCON34 --stdout
   hackertracker fetch content --conference DEFCON34
-  hackertracker fetch sessions --conference DEFCON34
+  hackertracker fetch speakers --conference DEFCON34
+  hackertracker fetch tagtypes --conference DEFCON34
   hackertracker fetch all --conference DEFCON34
 
 Target help:
