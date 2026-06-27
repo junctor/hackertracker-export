@@ -27,7 +27,7 @@ type SessionViewModel struct {
 	ID                    int           `json:"id"`
 	LocationName          string        `json:"locationName"`
 	Session               SessionModel  `json:"session"`
-	Speakers              *string       `json:"speakers"`
+	PeopleText            *string       `json:"speakers"`
 	Tags                  []CompactTag  `json:"tags"`
 	Title                 string        `json:"title"`
 }
@@ -83,10 +83,10 @@ func buildIndexes(st *stores, timezone string) builtIndexes {
 }
 
 func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionViewModel {
-	speakerNames := []string{}
+	peopleNames := []string{}
 	for _, personID := range session.PersonIDs {
 		if person, ok := st.peopleByID[personID]; ok && person.Name != "" {
-			speakerNames = append(speakerNames, person.Name)
+			peopleNames = append(peopleNames, person.Name)
 		}
 	}
 
@@ -109,10 +109,10 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionView
 		}
 	}
 
-	var speakers *string
-	if len(speakerNames) > 0 {
-		text := strings.Join(speakerNames, ", ")
-		speakers = &text
+	var peopleText *string
+	if len(peopleNames) > 0 {
+		text := strings.Join(peopleNames, ", ")
+		peopleText = &text
 	}
 
 	return SessionViewModel{
@@ -130,7 +130,7 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionView
 		ID:                    session.ID,
 		LocationName:          locationName,
 		Session:               session,
-		Speakers:              speakers,
+		PeopleText:            peopleText,
 		Tags:                  tags,
 		Title:                 session.Title,
 	}
