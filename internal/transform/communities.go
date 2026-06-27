@@ -241,36 +241,43 @@ func createSearchData(st *stores) []SearchItem {
 	return items
 }
 
-func buildTagIDsByLabel(tagTypes []hackertracker.TagType) TagIDsByLabel {
+func buildTagIDsByLabel(data hackertracker.SourceData) TagIDsByLabel {
 	byLabel := map[string]int{}
 	collisions := map[string]map[int]bool{}
-	for _, tagType := range tagTypes {
-		for _, tag := range tagType.Tags {
-			id, ok := normalizeID(tag.ID)
-			if !ok {
-				continue
-			}
-			key := normalizeLabel(tag.Label)
-			if key == "" {
-				continue
-			}
-			existingID, exists := byLabel[key]
-			if !exists {
-				byLabel[key] = id
-				continue
-			}
-			if existingID != id {
-				if id < existingID {
-					byLabel[key] = id
-				}
-				if collisions[key] == nil {
-					collisions[key] = map[int]bool{}
-				}
-				collisions[key][existingID] = true
-				collisions[key][id] = true
-			}
-		}
+	for _, tag := range sourceTags(data) {
+		addTagIDByLabel(byLabel, collisions, tag.ID, tag.Label)
 	}
+	return tagIDsByLabelResult(byLabel, collisions)
+}
+
+func addTagIDByLabel(byLabel map[string]int, collisions map[string]map[int]bool, rawID any, label string) {
+	id, ok := normalizeID(rawID)
+	if !ok {
+		return
+	}
+	key := normalizeLabel(label)
+	if key == "" {
+		return
+	}
+	existingID, exists := byLabel[key]
+	if !exists {
+		byLabel[key] = id
+		return
+	}
+	if existingID == id {
+		return
+	}
+	if id < existingID {
+		byLabel[key] = id
+	}
+	if collisions[key] == nil {
+		collisions[key] = map[int]bool{}
+	}
+	collisions[key][existingID] = true
+	collisions[key][id] = true
+}
+
+func tagIDsByLabelResult(byLabel map[string]int, collisions map[string]map[int]bool) TagIDsByLabel {
 	result := TagIDsByLabel{ByLabel: byLabel, Version: 1}
 	if len(collisions) > 0 {
 		result.Collisions = map[string][]int{}
