@@ -1,256 +1,289 @@
 package transform
 
 import (
-	"fmt"
-	"sort"
+	"cmp"
+	"maps"
+	"slices"
 	"strings"
 
-	"github.com/junctor/hackertracker-export/internal/export"
 	"github.com/junctor/hackertracker-export/pkg/hackertracker"
 )
 
+type OrganizationCard struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	LogoURL string `json:"logoUrl,omitempty"`
+}
+
+type organizationCardEntry struct {
+	Card   OrganizationCard
+	TagIDs []int
+}
+
+type PeopleCard struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Title     string `json:"title,omitempty"`
+	AvatarURL string `json:"avatarUrl,omitempty"`
+}
+
+type TagSummary struct {
+	ColorBackground string `json:"colorBackground"`
+	ColorForeground string `json:"colorForeground"`
+	ID              int    `json:"id"`
+	Label           string `json:"label"`
+	SortOrder       *int   `json:"sortOrder"`
+}
+
+type TagTypeBrowse struct {
+	Category  *string      `json:"category"`
+	ID        int          `json:"id"`
+	Label     string       `json:"label"`
+	SortOrder *int         `json:"sortOrder"`
+	Tags      []TagSummary `json:"tags"`
+}
+
+type DocumentListItem struct {
+	ID          int     `json:"id"`
+	TitleText   *string `json:"titleText"`
+	UpdatedAtMs int64   `json:"updatedAtMs"`
+}
+
+type CompactTag struct {
+	ColorBackground string `json:"colorBackground"`
+	ColorForeground string `json:"colorForeground"`
+	ID              int    `json:"id"`
+	Label           string `json:"label"`
+}
+
+type ContentCard struct {
+	ID    int          `json:"id"`
+	Tags  []CompactTag `json:"tags"`
+	Title string       `json:"title"`
+}
+
+type SearchItem struct {
+	ID   int    `json:"id"`
+	Norm string `json:"norm"`
+	Text string `json:"text"`
+	Type string `json:"type"`
+}
+
+type TagIDsByLabel struct {
+	ByLabel    map[string]int   `json:"byLabel"`
+	Version    int              `json:"version"`
+	Collisions map[string][]int `json:"collisions,omitempty"`
+}
+
 func buildViews(st *stores) map[string]any {
-	organizationsCardsList := []map[string]any{}
+	return map[string]any{
+		"contentCards":       buildContentCards(st),
+		"documentsList":      buildDocumentsList(st),
+		"organizationsCards": buildOrganizationsCards(st),
+		"peopleCards":        buildPeopleCards(st),
+		"searchData":         createSearchData(st),
+		"tagTypesBrowse":     buildTagTypesBrowse(st),
+	}
+}
+
+func buildOrganizationsCards(st *stores) map[string][]OrganizationCard {
+	entries := []organizationCardEntry{}
 	for _, orgID := range st.organizationIDs {
 		org := st.organizationsByID[orgID]
-		card := map[string]any{"id": org["id"], "name": org["name"]}
-		if org["logoUrl"] != nil {
-			card["logoUrl"] = org["logoUrl"]
-		}
-		organizationsCardsList = append(organizationsCardsList, map[string]any{"card": card, "tagIds": intSlice(org["tagIds"])})
+		entries = append(entries, organizationCardEntry{
+			Card: OrganizationCard{
+				ID:      org.ID,
+				Name:    org.Name,
+				LogoURL: org.LogoURL,
+			},
+			TagIDs: slices.Clone(org.TagIDs),
+		})
 	}
-	sort.Slice(organizationsCardsList, func(i, j int) bool {
-		a := organizationsCardsList[i]["card"].(map[string]any)
-		b := organizationsCardsList[j]["card"].(map[string]any)
-		if stringValue(a["name"]) != stringValue(b["name"]) {
-			return alphaLess(stringValue(a["name"]), stringValue(b["name"]))
-		}
-		return intValue(a["id"]) < intValue(b["id"])
+	slices.SortFunc(entries, func(left, right organizationCardEntry) int {
+		return cmp.Or(
+			alphaCompare(left.Card.Name, right.Card.Name),
+			cmp.Compare(left.Card.ID, right.Card.ID),
+		)
 	})
-	organizationsCards := map[string]any{}
-	for _, entry := range organizationsCardsList {
-		card := entry["card"]
+
+	cards := map[string][]OrganizationCard{}
+	for _, entry := range entries {
 		seenTags := map[int]bool{}
 		assigned := false
-		for _, tagID := range entry["tagIds"].([]int) {
+		for _, tagID := range entry.TagIDs {
 			if seenTags[tagID] {
 				continue
 			}
 			seenTags[tagID] = true
-			key := stringValue(tagID)
-			list, _ := organizationsCards[key].([]any)
-			list = append(list, card)
-			organizationsCards[key] = list
+			key := idKey(tagID)
+			cards[key] = append(cards[key], entry.Card)
 			assigned = true
 		}
 		if !assigned {
-			list, _ := organizationsCards["uncategorized"].([]any)
-			list = append(list, card)
-			organizationsCards["uncategorized"] = list
+			cards["uncategorized"] = append(cards["uncategorized"], entry.Card)
 		}
 	}
-
-	peopleCards := []any{}
-	for _, personID := range st.peopleIDs {
-		person := st.peopleByID[personID]
-		model := map[string]any{"id": person["id"], "name": person["name"]}
-		if person["title"] != nil {
-			model["title"] = person["title"]
-		}
-		if person["avatarUrl"] != nil {
-			model["avatarUrl"] = person["avatarUrl"]
-		}
-		peopleCards = append(peopleCards, model)
-	}
-	sort.Slice(peopleCards, func(i, j int) bool {
-		a := peopleCards[i].(map[string]any)
-		b := peopleCards[j].(map[string]any)
-		if stringValue(a["name"]) != stringValue(b["name"]) {
-			return alphaLess(stringValue(a["name"]), stringValue(b["name"]))
-		}
-		return intValue(a["id"]) < intValue(b["id"])
-	})
-
-	tagTypesBrowse := buildTagTypesBrowse(st)
-	documentsList := buildDocumentsList(st)
-	contentCards := buildContentCards(st)
-	searchData := createSearchData(st)
-	return map[string]any{
-		"contentCards":       contentCards,
-		"documentsList":      documentsList,
-		"organizationsCards": organizationsCards,
-		"peopleCards":        peopleCards,
-		"searchData":         searchData,
-		"tagTypesBrowse":     tagTypesBrowse,
-	}
+	return cards
 }
 
-func buildTagTypesBrowse(st *stores) []any {
-	tagsByType := map[int][]map[string]any{}
-	for _, tagID := range st.tagIDs {
-		tag := st.tagsByID[tagID]
-		typeID := intValue(tag["tagTypeId"])
-		if typeID == 0 {
-			continue
-		}
-		tagsByType[typeID] = append(tagsByType[typeID], map[string]any{
-			"colorBackground": tag["colorBackground"],
-			"colorForeground": tag["colorForeground"],
-			"id":              tag["id"],
-			"label":           tag["label"],
-			"sortOrder":       tag["sortOrder"],
+func buildPeopleCards(st *stores) []PeopleCard {
+	cards := []PeopleCard{}
+	for _, personID := range st.peopleIDs {
+		person := st.peopleByID[personID]
+		cards = append(cards, PeopleCard{
+			ID:        person.ID,
+			Name:      person.Name,
+			Title:     person.Title,
+			AvatarURL: person.AvatarURL,
 		})
 	}
-	out := []any{}
+	slices.SortFunc(cards, func(left, right PeopleCard) int {
+		return cmp.Or(
+			alphaCompare(left.Name, right.Name),
+			cmp.Compare(left.ID, right.ID),
+		)
+	})
+	return cards
+}
+
+func buildTagTypesBrowse(st *stores) []TagTypeBrowse {
+	tagsByType := map[int][]TagSummary{}
+	for _, tagID := range st.tagIDs {
+		tag := st.tagsByID[tagID]
+		if tag.TagTypeID == 0 {
+			continue
+		}
+		tagsByType[tag.TagTypeID] = append(tagsByType[tag.TagTypeID], tagSummary(tag))
+	}
+
+	out := []TagTypeBrowse{}
 	for _, typeID := range st.tagTypeIDs {
 		tagType := st.tagTypesByID[typeID]
-		if tagType["isBrowsable"] != true || tagType["category"] != "content" {
+		if !tagType.IsBrowsable || tagType.Category == nil || *tagType.Category != "content" {
 			continue
 		}
 		tags := tagsByType[typeID]
 		if len(tags) == 0 {
 			continue
 		}
-		sort.Slice(tags, func(i, j int) bool { return compareTags(tags[i], tags[j]) < 0 })
-		out = append(out, map[string]any{
-			"category":  tagType["category"],
-			"id":        tagType["id"],
-			"label":     tagType["label"],
-			"sortOrder": tagType["sortOrder"],
-			"tags":      eventsAny(tags),
+		slices.SortFunc(tags, compareTagSummaries)
+		out = append(out, TagTypeBrowse{
+			Category:  tagType.Category,
+			ID:        tagType.ID,
+			Label:     tagType.Label,
+			SortOrder: tagType.SortOrder,
+			Tags:      tags,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a := out[i].(map[string]any)
-		b := out[j].(map[string]any)
-		ao := intValue(a["sortOrder"])
-		bo := intValue(b["sortOrder"])
-		if ao != bo {
-			return ao < bo
-		}
-		if stringValue(a["label"]) != stringValue(b["label"]) {
-			return stringValue(a["label"]) < stringValue(b["label"])
-		}
-		return intValue(a["id"]) < intValue(b["id"])
+	slices.SortFunc(out, func(left, right TagTypeBrowse) int {
+		return cmp.Or(
+			compareOptionalInts(left.SortOrder, right.SortOrder),
+			cmp.Compare(left.Label, right.Label),
+			cmp.Compare(left.ID, right.ID),
+		)
 	})
 	return out
 }
 
-func buildDocumentsList(st *stores) []any {
-	out := []any{}
+func buildDocumentsList(st *stores) []DocumentListItem {
+	out := []DocumentListItem{}
 	for _, docID := range st.documentIDs {
 		doc := st.documentsByID[docID]
-		updated := doc["updatedAtMs"]
-		if updated == nil {
-			updated = int64(0)
-		}
-		out = append(out, map[string]any{"id": doc["id"], "titleText": doc["titleText"], "updatedAtMs": updated})
+		out = append(out, DocumentListItem{ID: doc.ID, TitleText: doc.TitleText, UpdatedAtMs: valueOrZero(doc.UpdatedAtMs)})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a := out[i].(map[string]any)
-		b := out[j].(map[string]any)
-		au := int64Value(a["updatedAtMs"])
-		bu := int64Value(b["updatedAtMs"])
-		if au != bu {
-			return au > bu
-		}
-		return intValue(a["id"]) < intValue(b["id"])
+	slices.SortFunc(out, func(left, right DocumentListItem) int {
+		return cmp.Or(
+			cmp.Compare(right.UpdatedAtMs, left.UpdatedAtMs),
+			cmp.Compare(left.ID, right.ID),
+		)
 	})
 	return out
 }
 
-func buildContentCards(st *stores) []any {
-	out := []any{}
+func buildContentCards(st *stores) []ContentCard {
+	out := []ContentCard{}
 	for _, contentID := range st.contentIDs {
 		item := st.contentByID[contentID]
-		tags := []map[string]any{}
-		for _, tagID := range intSlice(item["tagIds"]) {
-			if tag := st.tagsByID[tagID]; tag != nil {
-				tags = append(tags, compactTag(tag))
-			}
+		tags := tagsForIDs(item.TagIDs, st.tagsByID)
+		slices.SortFunc(tags, compareTags)
+		compactTags := make([]CompactTag, 0, len(tags))
+		for _, tag := range tags {
+			compactTags = append(compactTags, compactTag(tag))
 		}
-		sort.Slice(tags, func(i, j int) bool { return compareTags(tags[i], tags[j]) < 0 })
-		out = append(out, map[string]any{"id": item["id"], "tags": eventsAny(tags), "title": item["title"]})
+		out = append(out, ContentCard{ID: item.ID, Tags: compactTags, Title: item.Title})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		a := out[i].(map[string]any)
-		b := out[j].(map[string]any)
-		if stringValue(a["title"]) != stringValue(b["title"]) {
-			return alphaLess(stringValue(a["title"]), stringValue(b["title"]))
-		}
-		return intValue(a["id"]) < intValue(b["id"])
+	slices.SortFunc(out, func(left, right ContentCard) int {
+		return cmp.Or(
+			alphaCompare(left.Title, right.Title),
+			cmp.Compare(left.ID, right.ID),
+		)
 	})
 	return out
 }
 
-func createSearchData(st *stores) []any {
-	items := []any{}
+func createSearchData(st *stores) []SearchItem {
+	items := []SearchItem{}
 	for _, personID := range st.peopleIDs {
 		person := st.peopleByID[personID]
-		text := person["name"]
-		items = append(items, map[string]any{"id": person["id"], "norm": normalizeForSearch(text), "text": text, "type": "person"})
+		items = append(items, SearchItem{ID: person.ID, Norm: normalizeForSearch(person.Name), Text: person.Name, Type: "person"})
 	}
 	for _, contentID := range st.contentIDs {
 		item := st.contentByID[contentID]
-		text := item["title"]
-		items = append(items, map[string]any{"id": item["id"], "norm": normalizeForSearch(text), "text": text, "type": "content"})
+		items = append(items, SearchItem{ID: item.ID, Norm: normalizeForSearch(item.Title), Text: item.Title, Type: "content"})
 	}
 	for _, orgID := range st.organizationIDs {
 		org := st.organizationsByID[orgID]
-		text := org["name"]
-		items = append(items, map[string]any{"id": org["id"], "norm": normalizeForSearch(text), "text": text, "type": "organization"})
+		items = append(items, SearchItem{ID: org.ID, Norm: normalizeForSearch(org.Name), Text: org.Name, Type: "organization"})
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		a := items[i].(map[string]any)
-		b := items[j].(map[string]any)
-		return alphaLess(stringValue(a["text"]), stringValue(b["text"]))
+	slices.SortStableFunc(items, func(left, right SearchItem) int {
+		return alphaCompare(left.Text, right.Text)
 	})
 	return items
 }
 
-func buildTagIDsByLabel(tagTypes []hackertracker.TagType) map[string]any {
-	byLabel := map[string]any{}
+func buildTagIDsByLabel(data hackertracker.SourceData) TagIDsByLabel {
+	byLabel := map[string]int{}
 	collisions := map[string]map[int]bool{}
-	for _, tagType := range tagTypes {
-		for _, tag := range tagType.Tags {
-			id, ok := export.NormalizeID(tag.ID)
-			if !ok {
-				continue
-			}
-			key := normalizeLabel(tag.Label)
-			if key == "" {
-				continue
-			}
-			existing, exists := byLabel[key]
-			if !exists {
-				byLabel[key] = id
-				continue
-			}
-			existingID := intValue(existing)
-			if existingID != id {
-				if id < existingID {
-					byLabel[key] = id
-				}
-				if collisions[key] == nil {
-					collisions[key] = map[int]bool{}
-				}
-				collisions[key][existingID] = true
-				collisions[key][id] = true
-			}
-		}
+	for _, tag := range sourceTags(data) {
+		addTagIDByLabel(byLabel, collisions, tag.ID, tag.Label)
 	}
-	result := map[string]any{"byLabel": byLabel, "version": 1}
+	return tagIDsByLabelResult(byLabel, collisions)
+}
+
+func addTagIDByLabel(byLabel map[string]int, collisions map[string]map[int]bool, rawID any, label string) {
+	id, ok := normalizeID(rawID)
+	if !ok {
+		return
+	}
+	key := normalizeLabel(label)
+	if key == "" {
+		return
+	}
+	existingID, exists := byLabel[key]
+	if !exists {
+		byLabel[key] = id
+		return
+	}
+	if existingID == id {
+		return
+	}
+	if id < existingID {
+		byLabel[key] = id
+	}
+	if collisions[key] == nil {
+		collisions[key] = map[int]bool{}
+	}
+	collisions[key][existingID] = true
+	collisions[key][id] = true
+}
+
+func tagIDsByLabelResult(byLabel map[string]int, collisions map[string]map[int]bool) TagIDsByLabel {
+	result := TagIDsByLabel{ByLabel: byLabel, Version: 1}
 	if len(collisions) > 0 {
-		collisionObj := map[string]any{}
+		result.Collisions = map[string][]int{}
 		for key, set := range collisions {
-			ids := []int{}
-			for id := range set {
-				ids = append(ids, id)
-			}
-			sort.Ints(ids)
-			collisionObj[key] = ids
+			result.Collisions[key] = slices.Sorted(maps.Keys(set))
 		}
-		result["collisions"] = collisionObj
 	}
 	return result
 }
@@ -273,85 +306,29 @@ func normalizeLabel(value string) string {
 	return strings.Trim(b.String(), "_")
 }
 
-func compactTag(tag map[string]any) map[string]any {
-	return map[string]any{
-		"colorBackground": tag["colorBackground"],
-		"colorForeground": tag["colorForeground"],
-		"id":              tag["id"],
-		"label":           tag["label"],
+func compactTag(tag TagModel) CompactTag {
+	return CompactTag{
+		ColorBackground: tag.ColorBackground,
+		ColorForeground: tag.ColorForeground,
+		ID:              tag.ID,
+		Label:           tag.Label,
 	}
 }
 
-func stringValue(value any) string {
-	return fmt.Sprint(value)
-}
-
-func intValue(value any) int {
-	id, _ := export.NormalizeID(value)
-	return id
-}
-
-func int64Value(value any) int64 {
-	switch v := value.(type) {
-	case int64:
-		return v
-	case int:
-		return int64(v)
-	case nil:
-		return 0
-	default:
-		id, _ := export.NormalizeID(v)
-		return int64(id)
+func tagSummary(tag TagModel) TagSummary {
+	return TagSummary{
+		ColorBackground: tag.ColorBackground,
+		ColorForeground: tag.ColorForeground,
+		ID:              tag.ID,
+		Label:           tag.Label,
+		SortOrder:       tag.SortOrder,
 	}
 }
 
-func intSlice(value any) []int {
-	switch v := value.(type) {
-	case []int:
-		return append([]int{}, v...)
-	case []any:
-		out := []int{}
-		for _, item := range v {
-			if id, ok := export.NormalizeID(item); ok {
-				out = append(out, id)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-func eventsAny[T any](items []T) []any {
-	out := make([]any, len(items))
-	for i, item := range items {
-		out[i] = item
-	}
-	return out
-}
-
-func nullableOrderValue(value any) *int {
-	if value == nil {
-		return nil
-	}
-	id, ok := export.NormalizeID(value)
-	if !ok {
-		return nil
-	}
-	return &id
-}
-
-func nonEmptyString(value any, fallback string) string {
-	if value == nil {
-		return fallback
-	}
-	text := fmt.Sprint(value)
-	if text == "" || text == "<nil>" {
-		return fallback
-	}
-	return text
-}
-
-func joinComma(values []string) string {
-	return strings.Join(values, ", ")
+func compareTagSummaries(a, b TagSummary) int {
+	return cmp.Or(
+		compareOptionalInts(a.SortOrder, b.SortOrder),
+		alphaCompare(a.Label, b.Label),
+		cmp.Compare(a.ID, b.ID),
+	)
 }

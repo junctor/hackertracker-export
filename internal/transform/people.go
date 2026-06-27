@@ -1,136 +1,154 @@
 package transform
 
-import "sort"
+import "slices"
 
-func buildContentDetail(content map[string]any, st *stores, allEvents []map[string]any) map[string]any {
-	sessionIDs := intSlice(content["sessions"])
-	sessions := []map[string]any{}
-	if len(sessionIDs) > 0 {
-		for _, eventID := range sessionIDs {
-			if event := st.eventsByID[eventID]; event != nil {
-				sessions = append(sessions, event)
+type ContentDetail struct {
+	Content   ContentModel    `json:"content"`
+	Locations []LocationModel `json:"locations"`
+	People    []PersonModel   `json:"people"`
+	Sessions  []SessionModel  `json:"sessions"`
+	Tags      []TagModel      `json:"tags"`
+}
+
+type PersonDetail struct {
+	Locations []LocationModel `json:"locations"`
+	Person    PersonModel     `json:"person"`
+	Sessions  []SessionModel  `json:"sessions"`
+}
+
+func buildContentDetail(content ContentModel, st *stores, allSessions []SessionModel) ContentDetail {
+	sessions := []SessionModel{}
+	if len(content.Sessions) > 0 {
+		for _, sessionID := range content.Sessions {
+			if session, ok := st.sessionsByID[sessionID]; ok {
+				sessions = append(sessions, session)
 			}
 		}
 	} else {
-		contentID := intValue(content["id"])
-		for _, event := range allEvents {
-			if intValue(event["contentId"]) == contentID {
-				sessions = append(sessions, event)
+		for _, session := range allSessions {
+			if session.ContentID == content.ID {
+				sessions = append(sessions, session)
 			}
 		}
 	}
-	sortEvents(sessions)
-	people := []any{}
-	if entries, ok := content["people"].([]any); ok && len(entries) > 0 {
-		sort.Slice(entries, func(i, j int) bool {
-			a := entries[i].(map[string]any)
-			b := entries[j].(map[string]any)
-			ao := nullableOrderValue(a["sortOrder"])
-			bo := nullableOrderValue(b["sortOrder"])
-			if (ao == nil) != (bo == nil) {
-				return ao != nil
-			}
-			if ao != nil && bo != nil && *ao != *bo {
-				return *ao < *bo
-			}
-			return intValue(a["personId"]) < intValue(b["personId"])
-		})
-		for _, entry := range entries {
-			personID := intValue(entry.(map[string]any)["personId"])
-			if person := st.peopleByID[personID]; person != nil {
+	sortSessions(sessions)
+
+	people := []PersonModel{}
+	if len(content.People) > 0 {
+		peopleEntries := slices.Clone(content.People)
+		slices.SortFunc(peopleEntries, compareContentPeople)
+		for _, entry := range peopleEntries {
+			if person, ok := st.peopleByID[entry.PersonID]; ok {
 				people = append(people, person)
 			}
 		}
 	} else {
 		seen := map[int]bool{}
 		for _, session := range sessions {
-			for _, personID := range append(intSlice(session["speakerIds"]), intSlice(session["personIds"])...) {
+			for _, personID := range session.PersonIDs {
 				if seen[personID] {
 					continue
 				}
-				if person := st.peopleByID[personID]; person != nil {
+				if person, ok := st.peopleByID[personID]; ok {
 					seen[personID] = true
 					people = append(people, person)
 				}
 			}
 		}
 	}
-	return map[string]any{
-		"content":   content,
-		"locations": uniqueLocationsForEvents(sessions, st),
-		"people":    people,
-		"sessions":  eventsAny(sessions),
-		"tags":      entitiesForIDs(intSlice(content["tagIds"]), st.tagsByID),
+
+	return ContentDetail{
+		Content:   content,
+		Locations: uniqueLocationsForSessions(sessions, st),
+		People:    people,
+		Sessions:  sessions,
+		Tags:      tagsForIDs(content.TagIDs, st.tagsByID),
 	}
 }
 
-func buildPersonDetail(person map[string]any, st *stores, allEvents []map[string]any) map[string]any {
-	events := []map[string]any{}
+func buildPersonDetail(person PersonModel, st *stores, allSessions []SessionModel) PersonDetail {
+	sessions := []SessionModel{}
 	seen := map[int]bool{}
-	for _, contentID := range intSlice(person["contentIds"]) {
-		content := st.contentByID[contentID]
-		for _, eventID := range intSlice(content["sessions"]) {
-			if event := st.eventsByID[eventID]; event != nil && !seen[eventID] {
-				seen[eventID] = true
-				events = append(events, event)
+	for _, contentID := range person.ContentIDs {
+		content, ok := st.contentByID[contentID]
+		if !ok {
+			continue
+		}
+		for _, sessionID := range content.Sessions {
+			if session, ok := st.sessionsByID[sessionID]; ok && !seen[sessionID] {
+				seen[sessionID] = true
+				sessions = append(sessions, session)
 			}
 		}
-		for _, event := range allEvents {
-			eventID := intValue(event["id"])
-			if intValue(event["contentId"]) == contentID && !seen[eventID] {
-				seen[eventID] = true
-				events = append(events, event)
+		for _, session := range allSessions {
+			if session.ContentID == contentID && !seen[session.ID] {
+				seen[session.ID] = true
+				sessions = append(sessions, session)
 			}
 		}
 	}
-	personID := intValue(person["id"])
-	for _, event := range allEvents {
-		eventID := intValue(event["id"])
-		if seen[eventID] {
+
+	for _, session := range allSessions {
+		if seen[session.ID] {
 			continue
 		}
-		for _, eventPersonID := range append(intSlice(event["speakerIds"]), intSlice(event["personIds"])...) {
-			if eventPersonID == personID {
-				seen[eventID] = true
-				events = append(events, event)
+		for _, sessionPersonID := range session.PersonIDs {
+			if sessionPersonID == person.ID {
+				seen[session.ID] = true
+				sessions = append(sessions, session)
 				break
 			}
 		}
 	}
-	sortEvents(events)
-	return map[string]any{
-		"events":    eventsAny(events),
-		"locations": uniqueLocationsForEvents(events, st),
-		"person":    person,
+	sortSessions(sessions)
+
+	return PersonDetail{
+		Locations: uniqueLocationsForSessions(sessions, st),
+		Person:    person,
+		Sessions:  sessions,
 	}
 }
 
-func uniqueLocationsForEvents(events []map[string]any, st *stores) []any {
+func uniqueLocationsForSessions(sessions []SessionModel, st *stores) []LocationModel {
 	seen := map[int]bool{}
-	locations := []any{}
-	for _, event := range events {
-		locationID := intValue(event["locationId"])
-		if locationID == 0 || seen[locationID] {
+	locations := []LocationModel{}
+	for _, session := range sessions {
+		if session.LocationID == nil || seen[*session.LocationID] {
 			continue
 		}
-		if location := st.locationsByID[locationID]; location != nil {
-			seen[locationID] = true
+		if location, ok := st.locationsByID[*session.LocationID]; ok {
+			seen[*session.LocationID] = true
 			locations = append(locations, location)
 		}
 	}
 	return locations
 }
 
-func entitiesForIDs(ids []int, byID map[int]map[string]any) []any {
+func tagsForIDs(ids []int, byID map[int]TagModel) []TagModel {
 	seen := map[int]bool{}
-	out := []any{}
+	out := []TagModel{}
 	for _, id := range ids {
 		if seen[id] {
 			continue
 		}
-		if entity := byID[id]; entity != nil {
+		if entity, ok := byID[id]; ok {
 			seen[id] = true
 			out = append(out, entity)
+		}
+	}
+	return out
+}
+
+func peopleForIDs(ids []int, st *stores) []PersonModel {
+	seen := map[int]bool{}
+	out := []PersonModel{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		if person, ok := st.peopleByID[id]; ok {
+			seen[id] = true
+			out = append(out, person)
 		}
 	}
 	return out

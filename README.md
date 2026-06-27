@@ -1,54 +1,221 @@
-# Hacker Tracker Export
+# hackertracker-export
 
-Go tools for exporting Hacker Tracker Firestore data.
+Go CLI for exporting HackerTracker Firestore data into raw inspection files or the normalized static JSON artifacts consumed by [info.defcon.org](https://info.defcon.org) and [`junctor/hackertracker-info`](https://github.com/junctor/hackertracker-info).
 
-This repository contains two commands:
+The CLI has two primary workflows:
 
-- `cmd/hackertracker`: generic raw Hacker Tracker fetcher.
-- `cmd/info-export`: purpose-built exporter for the `info.defcon.org` JSON shape.
+- `fetch` writes Firestore-shaped JSON for inspection, fixtures, audits, and debugging.
+- `info` transforms HackerTracker data into the static artifact tree served by the web app.
 
-The implementation intentionally keeps dependencies small. The only Firebase SDK dependency is:
+## Install
 
-```sh
-go get firebase.google.com/go/v4
-```
-
-## Usage
-
-From this repository:
+Run from source:
 
 ```sh
 go run ./cmd/hackertracker --help
-go run ./cmd/hackertracker conferences
-go run ./cmd/hackertracker fetch --conference defcon34 --out ./raw
 ```
 
-Generate the `info.defcon.org` artifacts:
+Or install a local binary:
 
 ```sh
-go run ./cmd/info-export --conference defcon34 --out ./public/defcon34/data
+go install ./cmd/hackertracker
+hackertracker --help
 ```
 
-The info exporter writes:
+Firestore-backed commands require network access and permission to read the HackerTracker Firestore project.
 
-- `manifest.json`
-- `entities/*.json`
-- `indexes/*.json`
-- `views/*.json`
-- `derived/tagIdsByLabel.json`
-- `details/<type>/<id>.json`
+## CLI Usage
 
-Generated JSON is minified, uses stable key ordering, and sanitizes strings to match the JavaScript exporter behavior.
+```sh
+hackertracker conferences
+hackertracker fetch <target> --conference <code> [--stdout] [--out <dir>]
+hackertracker info [--out <dir>] --conference <code> [--conference <code>]
+```
 
-## Firebase Access
+The same commands can be run through `go run`:
 
-The JavaScript exporter uses the public Firebase web client without an auth flow. This Go rewrite initializes the Firebase Go SDK with `option.WithoutAuthentication()` and the Hacker Tracker project ID.
+```sh
+go run ./cmd/hackertracker conferences
+go run ./cmd/hackertracker fetch content --conference DEFCON34 --stdout
+go run ./cmd/hackertracker info --conference DEFCON34
+```
 
-If Firestore rejects unauthenticated Admin SDK access in an environment, the fetch commands fail loudly. No credential loading, REST fallback, or custom auth flow is added here.
+`info` also accepts additional conference codes as positional arguments after the flags.
 
-## Development
+## Fetch Raw Data
 
-Use a writable Go build cache if your environment restricts the default cache location:
+Fetch targets are:
+
+```text
+conference
+articles
+content
+documents
+locations
+organizations
+speakers
+tagtypes
+all
+```
+
+Examples:
+
+```sh
+go run ./cmd/hackertracker fetch conference --conference DEFCON34 --stdout
+go run ./cmd/hackertracker fetch content --conference DEFCON34 --stdout
+go run ./cmd/hackertracker fetch speakers --conference DEFCON34 --stdout
+go run ./cmd/hackertracker fetch all --conference DEFCON34
+```
+
+By default, raw files are written to:
+
+```text
+out/ht/<lowercase-conference>/raw/
+  conference.json
+  articles.json
+  content.json
+  documents.json
+  locations.json
+  organizations.json
+  speakers.json
+  tagtypes.json
+```
+
+Use `--out` to choose the exact raw output directory. The command writes files directly into that directory:
+
+```sh
+go run ./cmd/hackertracker fetch all --conference DEFCON34 --out ./tmp/defcon34/raw
+```
+
+Use `--stdout` to print JSON instead of writing files. For `fetch all`, stdout contains the conference document and all supported raw collections.
+
+## Generate Web Artifacts
+
+Generate one conference into the default output directory:
+
+```sh
+go run ./cmd/hackertracker info --conference DEFCON34
+```
+
+Default output:
+
+```text
+out/ht/<lowercase-conference>/
+```
+
+Generate one conference into an exact output directory:
+
+```sh
+go run ./cmd/hackertracker info --conference DEFCON34 --out ./public/defcon34/data
+```
+
+Generate multiple conferences into one output root:
+
+```sh
+go run ./cmd/hackertracker info --out ./out/ht --conference DCSG2026 --conference DEFCON34
+```
+
+When multiple conferences are exported with `--out`, each conference is written below that root using the lower-case conference code.
+
+## Output Structure
+
+The `info` command writes:
+
+```text
+out/ht/<lowercase-conference>/
+  manifest.json
+
+  derived/
+    tagIdsByLabel.json
+
+  entities/
+    articles.json
+    content.json
+    documents.json
+    locations.json
+    organizations.json
+    people.json
+    sessions.json
+    tags.json
+    tagTypes.json
+
+  indexes/
+    sessionsByDay.json
+    sessionsByTag.json
+
+  views/
+    announcementsList.json
+    bookmarkSessionsById.json
+    contentCards.json
+    documentsList.json
+    locationCards.json
+    organizationsCards.json
+    peopleCards.json
+    scheduleDays.json
+    searchData.json
+    tagTypesBrowse.json
+
+  details/
+    content/<id>.json
+    documents/<id>.json
+    locations/<id>.json
+    organizations/<id>.json
+    people/<id>.json
+    sessions/<id>.json
+    tags/<id>.json
+```
+
+Entity files use this shape:
+
+```json
+{
+  "allIds": [123, 456],
+  "byId": {
+    "123": { "id": 123 },
+    "456": { "id": 456 }
+  }
+}
+```
+
+Each `info` run recreates the generated subdirectories so stale JSON is removed.
+
+## Raw Data vs Generated Artifacts
+
+Raw fetch output follows HackerTracker Firestore collection names. Generated web artifacts use the domain names expected by `info.defcon.org`.
+
+| Raw source                       | Generated artifacts                                                     |
+| -------------------------------- | ----------------------------------------------------------------------- |
+| `content`                        | `content`, `sessions`, schedule views, content details, session details |
+| `speakers`                       | `people`, people cards, people details                                  |
+| `tagtypes` and embedded tag data | `tags`, `tagTypes`, tag indexes, tag browse views                       |
+| `documents`                      | document entities, document lists, document details                     |
+| `locations`                      | location entities, location cards, location details                     |
+| `organizations`                  | organization entities, organization cards, organization details         |
+| `articles`                       | article entities and announcement views                                 |
+
+Use `content` for top-level HackerTracker content records, `sessions` for scheduled instances embedded in content records, `speakers` for the raw Firestore collection, and `people` for generated artifacts derived from speakers.
+
+## Development and Validation
+
+Run local checks:
+
+```sh
+gofmt -w .
+go test ./...
+go run ./cmd/hackertracker --help
+go run ./cmd/hackertracker fetch --help
+go run ./cmd/hackertracker info --help
+```
+
+Run Firestore-backed checks when network access and Firestore permissions are available:
+
+```sh
+go run ./cmd/hackertracker conferences
+go run ./cmd/hackertracker fetch all --conference DEFCON34
+go run ./cmd/hackertracker info --conference DEFCON34
+```
+
+If the default Go build cache is not writable in a sandboxed environment, set a writable cache path:
 
 ```sh
 GOCACHE=/tmp/hackertracker-go-build go test ./...

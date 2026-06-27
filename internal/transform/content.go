@@ -1,8 +1,9 @@
 package transform
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -12,26 +13,19 @@ import (
 	"github.com/junctor/hackertracker-export/pkg/hackertracker"
 )
 
-type BuildOptions struct {
-	SchemaVersion  int
-	BuildTimestamp time.Time
-}
-
 type stores struct {
-	entities map[string]any
+	contentByID       map[int]ContentModel
+	sessionsByID      map[int]SessionModel
+	peopleByID        map[int]PersonModel
+	locationsByID     map[int]LocationModel
+	organizationsByID map[int]OrganizationModel
+	tagsByID          map[int]TagModel
+	tagTypesByID      map[int]TagTypeModel
+	documentsByID     map[int]DocumentModel
+	articlesByID      map[int]ArticleModel
 
-	eventsByID        map[int]map[string]any
-	contentByID       map[int]map[string]any
-	peopleByID        map[int]map[string]any
-	locationsByID     map[int]map[string]any
-	organizationsByID map[int]map[string]any
-	tagsByID          map[int]map[string]any
-	tagTypesByID      map[int]map[string]any
-	documentsByID     map[int]map[string]any
-	articlesByID      map[int]map[string]any
-
-	eventIDs        []int
 	contentIDs      []int
+	sessionIDs      []int
 	peopleIDs       []int
 	locationIDs     []int
 	organizationIDs []int
@@ -41,13 +35,114 @@ type stores struct {
 	articleIDs      []int
 }
 
-func Build(conf hackertracker.Conference, data hackertracker.SourceData, opts BuildOptions) (export.Artifacts, error) {
-	if opts.SchemaVersion == 0 {
-		opts.SchemaVersion = 2
-	}
-	if opts.BuildTimestamp.IsZero() {
-		opts.BuildTimestamp = time.Now().UTC()
-	}
+type EntityStore[T any] struct {
+	AllIDs []int        `json:"allIds"`
+	ByID   map[string]T `json:"byId"`
+}
+
+type LinkModel struct {
+	Label string `json:"label,omitempty"`
+	Type  string `json:"type,omitempty"`
+	URL   string `json:"url,omitempty"`
+}
+
+type ContentPersonModel struct {
+	PersonID  int  `json:"personId"`
+	SortOrder *int `json:"sortOrder"`
+}
+
+type ContentModel struct {
+	ID                int                  `json:"id"`
+	RelatedContentIDs []int                `json:"relatedContentIds"`
+	Sessions          []int                `json:"sessions"`
+	Title             string               `json:"title"`
+	Description       string               `json:"description,omitempty"`
+	Links             []LinkModel          `json:"links,omitempty"`
+	TagIDs            []int                `json:"tagIds,omitempty"`
+	People            []ContentPersonModel `json:"people,omitempty"`
+}
+
+type SessionModel struct {
+	ID                    int    `json:"id"`
+	ContentID             int    `json:"contentId"`
+	Title                 string `json:"title"`
+	Begin                 string `json:"begin"`
+	BeginDisplay          string `json:"beginDisplay,omitempty"`
+	BeginIso              string `json:"beginIso,omitempty"`
+	BeginTimestampSeconds int64  `json:"beginTimestampSeconds"`
+	End                   string `json:"end"`
+	EndDisplay            string `json:"endDisplay,omitempty"`
+	EndIso                string `json:"endIso,omitempty"`
+	EndTimestampSeconds   int64  `json:"endTimestampSeconds"`
+	LocationID            *int   `json:"locationId"`
+	PersonIDs             []int  `json:"personIds,omitempty"`
+	TagIDs                []int  `json:"tagIds,omitempty"`
+	ChannelID             *int   `json:"channelId,omitempty"`
+	RecordingPolicyID     int    `json:"recordingPolicyId,omitempty"`
+	TimezoneName          string `json:"timezoneName,omitempty"`
+}
+
+type PersonModel struct {
+	ContentIDs   []int       `json:"contentIds"`
+	ID           int         `json:"id"`
+	Name         string      `json:"name"`
+	Description  string      `json:"description,omitempty"`
+	Pronouns     string      `json:"pronouns,omitempty"`
+	Title        string      `json:"title,omitempty"`
+	Affiliations []string    `json:"affiliations,omitempty"`
+	AvatarURL    string      `json:"avatarUrl,omitempty"`
+	Links        []LinkModel `json:"links,omitempty"`
+}
+
+type LocationModel struct {
+	ID        int     `json:"id"`
+	Name      string  `json:"name"`
+	ShortName *string `json:"shortName"`
+	ParentID  *int    `json:"parentId"`
+}
+
+type OrganizationModel struct {
+	Description      string      `json:"description"`
+	ID               int         `json:"id"`
+	Links            []LinkModel `json:"links"`
+	Name             string      `json:"name"`
+	TagIDAsOrganizer *int        `json:"tagIdAsOrganizer"`
+	LogoURL          string      `json:"logoUrl,omitempty"`
+	TagIDs           []int       `json:"tagIds,omitempty"`
+}
+
+type TagModel struct {
+	ColorBackground string `json:"colorBackground"`
+	ColorForeground string `json:"colorForeground"`
+	ID              int    `json:"id"`
+	Label           string `json:"label"`
+	SortOrder       *int   `json:"sortOrder"`
+	TagTypeID       int    `json:"tagTypeId"`
+}
+
+type TagTypeModel struct {
+	Category    *string `json:"category"`
+	ID          int     `json:"id"`
+	IsBrowsable bool    `json:"isBrowsable"`
+	Label       string  `json:"label"`
+	SortOrder   *int    `json:"sortOrder"`
+}
+
+type ArticleModel struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Text        string `json:"text"`
+	UpdatedAtMs *int64 `json:"updatedAtMs"`
+}
+
+type DocumentModel struct {
+	BodyText    *string `json:"bodyText"`
+	ID          int     `json:"id"`
+	TitleText   *string `json:"titleText"`
+	UpdatedAtMs *int64  `json:"updatedAtMs,omitempty"`
+}
+
+func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export.Artifacts, error) {
 	if conf.Timezone == "" {
 		return export.Artifacts{}, fmt.Errorf("missing conference timezone")
 	}
@@ -65,17 +160,20 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData, opts Bu
 
 	return export.Artifacts{
 		Manifest: map[string]any{
-			"buildTimestamp": opts.BuildTimestamp.UTC().Format("2006-01-02T15:04:05.000Z"),
+			"buildTimestamp": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 			"code":           conf.Code,
 			"name":           conf.Name,
-			"schemaVersion":  opts.SchemaVersion,
+			"schemaVersion":  2,
 			"timezone":       conf.Timezone,
 		},
-		Entities: st.entities,
-		Indexes:  map[string]any{"eventsByDay": indexes.eventsByDay, "eventsByTag": indexes.eventsByTag},
-		Views:    views,
-		Derived:  map[string]any{"tagIdsByLabel": buildTagIDsByLabel(data.TagTypes)},
-		Details:  details,
+		Entities: entities(st),
+		Indexes: map[string]any{
+			"sessionsByDay": indexes.sessionsByDay,
+			"sessionsByTag": indexes.sessionsByTag,
+		},
+		Views:   views,
+		Derived: map[string]any{"tagIdsByLabel": buildTagIDsByLabel(data)},
+		Details: details,
 	}, nil
 }
 
@@ -92,77 +190,69 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 		contentIDs:  map[int]bool{},
 	}
 	for _, loc := range data.Locations {
-		if id, ok := export.NormalizeID(loc.ID); ok {
+		if id, ok := normalizeID(loc.ID); ok {
 			refs.locationIDs[id] = true
 		}
 	}
-	for _, person := range data.Speakers {
-		if id, ok := export.NormalizeID(person.ID); ok {
+	for _, speaker := range data.Speakers {
+		if id, ok := normalizeID(speaker.ID); ok {
 			refs.personIDs[id] = true
 		}
 	}
-	for _, group := range data.TagTypes {
-		for _, tag := range group.Tags {
-			if id, ok := export.NormalizeID(tag.ID); ok {
-				refs.tagIDs[id] = true
-			}
+	for _, tag := range sourceTags(data) {
+		if id, ok := normalizeID(tag.ID); ok {
+			refs.tagIDs[id] = true
 		}
 	}
 	for _, item := range data.Content {
-		if id, ok := export.NormalizeID(item.ID); ok {
+		if id, ok := normalizeID(item.ID); ok {
 			refs.contentIDs[id] = true
 		}
 	}
 
 	st := &stores{
-		entities:          map[string]any{},
-		eventsByID:        map[int]map[string]any{},
-		contentByID:       map[int]map[string]any{},
-		peopleByID:        map[int]map[string]any{},
-		locationsByID:     map[int]map[string]any{},
-		organizationsByID: map[int]map[string]any{},
-		tagsByID:          map[int]map[string]any{},
-		tagTypesByID:      map[int]map[string]any{},
-		documentsByID:     map[int]map[string]any{},
-		articlesByID:      map[int]map[string]any{},
-	}
-
-	contentEventSources := buildEventSources(data)
-	for _, event := range contentEventSources {
-		model, err := buildEventModel(event, refs.locationIDs, refs.personIDs, refs.tagIDs, refs.contentIDs, timezone)
-		if err != nil {
-			return nil, err
-		}
-		putEntity(st.eventsByID, &st.eventIDs, model)
+		contentByID:       map[int]ContentModel{},
+		sessionsByID:      map[int]SessionModel{},
+		peopleByID:        map[int]PersonModel{},
+		locationsByID:     map[int]LocationModel{},
+		organizationsByID: map[int]OrganizationModel{},
+		tagsByID:          map[int]TagModel{},
+		tagTypesByID:      map[int]TagTypeModel{},
+		documentsByID:     map[int]DocumentModel{},
+		articlesByID:      map[int]ArticleModel{},
 	}
 
 	for _, item := range data.Content {
-		model, err := buildContentModel(item, refs.personIDs, refs.tagIDs, refs.contentIDs)
+		content, sessions, err := buildContentModel(item, refs.personIDs, refs.tagIDs, refs.contentIDs, refs.locationIDs, timezone)
 		if err != nil {
 			return nil, err
 		}
-		putEntity(st.contentByID, &st.contentIDs, model)
+		putEntity(st.contentByID, &st.contentIDs, content)
+		for _, session := range sessions {
+			putEntity(st.sessionsByID, &st.sessionIDs, session)
+		}
 	}
-	for _, person := range data.Speakers {
-		model, err := buildPersonModel(person, refs.contentIDs)
+	for _, speaker := range data.Speakers {
+		model, err := buildPersonModel(speaker, refs.contentIDs)
 		if err != nil {
 			return nil, err
 		}
 		putEntity(st.peopleByID, &st.peopleIDs, model)
 	}
 	for _, loc := range data.Locations {
-		id, ok := export.NormalizeID(loc.ID)
+		id, ok := normalizeID(loc.ID)
 		if !ok {
 			return nil, fmt.Errorf("location missing id")
 		}
-		model := map[string]any{"id": id, "name": loc.Name, "shortName": nil, "parentId": nil}
+		var shortName *string
 		if loc.ShortName != "" {
-			model["shortName"] = loc.ShortName
+			shortName = &loc.ShortName
 		}
-		if parentID, ok := export.NormalizeID(loc.ParentID); ok {
-			model["parentId"] = parentID
+		var parentID *int
+		if id, ok := normalizeID(loc.ParentID); ok {
+			parentID = &id
 		}
-		putEntity(st.locationsByID, &st.locationIDs, model)
+		putEntity(st.locationsByID, &st.locationIDs, LocationModel{ID: id, Name: loc.Name, ShortName: shortName, ParentID: parentID})
 	}
 	for _, org := range data.Organizations {
 		model, err := buildOrganizationModel(org, refs.tagIDs)
@@ -171,459 +261,327 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 		}
 		putEntity(st.organizationsByID, &st.organizationIDs, model)
 	}
-	tags := buildTags(data.TagTypes)
-	for _, tag := range tags {
+	for _, tag := range buildTags(data) {
 		putEntity(st.tagsByID, &st.tagIDs, tag)
 	}
 	for _, tagType := range data.TagTypes {
-		id, ok := export.NormalizeID(tagType.ID)
+		id, ok := normalizeID(tagType.ID)
 		if !ok {
 			return nil, fmt.Errorf("tag type missing id")
 		}
-		model := map[string]any{
-			"category":    nullableString(tagType.Category),
-			"id":          id,
-			"isBrowsable": tagType.IsBrowsable,
-			"label":       tagType.Label,
-			"sortOrder":   nullableInt(tagType.SortOrder),
-		}
-		putEntity(st.tagTypesByID, &st.tagTypeIDs, model)
+		putEntity(st.tagTypesByID, &st.tagTypeIDs, TagTypeModel{
+			Category:    stringPtrOrNil(tagType.Category),
+			ID:          id,
+			IsBrowsable: tagType.IsBrowsable,
+			Label:       tagType.Label,
+			SortOrder:   intPtrFromValue(tagType.SortOrder),
+		})
 	}
 	for _, article := range data.Articles {
-		id, ok := export.NormalizeID(article.ID)
+		id, ok := normalizeID(article.ID)
 		if !ok {
 			return nil, fmt.Errorf("article missing id")
 		}
-		model := map[string]any{
-			"id":          id,
-			"name":        article.Name,
-			"text":        nullableStringPtr(article.Text),
-			"updatedAtMs": nullableInt64(export.ResolveUpdatedAtMs(article.UpdatedAt, article.UpdatedTSZ, article.UpdatedAtStr)),
-		}
-		putEntity(st.articlesByID, &st.articleIDs, model)
+		putEntity(st.articlesByID, &st.articleIDs, ArticleModel{
+			ID:          id,
+			Name:        article.Name,
+			Text:        article.Text,
+			UpdatedAtMs: resolveUpdatedAtMs(article.UpdatedAt, article.UpdatedTSZ, article.UpdatedAtStr),
+		})
 	}
 	for _, doc := range data.Documents {
-		id, ok := export.NormalizeID(doc.ID)
+		id, ok := normalizeID(doc.ID)
 		if !ok {
 			return nil, fmt.Errorf("document missing id")
 		}
-		model := map[string]any{"bodyText": nullableString(doc.BodyText), "id": id, "titleText": nullableString(doc.TitleText)}
-		if updated := export.ResolveUpdatedAtMs(doc.UpdatedAt, doc.UpdatedTSZ, doc.UpdatedAtStr); updated != nil {
-			model["updatedAtMs"] = *updated
-		}
-		putEntity(st.documentsByID, &st.documentIDs, model)
+		putEntity(st.documentsByID, &st.documentIDs, DocumentModel{
+			BodyText:    stringPtrOrNil(doc.BodyText),
+			ID:          id,
+			TitleText:   stringPtrOrNil(doc.TitleText),
+			UpdatedAtMs: resolveUpdatedAtMs(doc.UpdatedAt, doc.UpdatedTSZ, doc.UpdatedAtStr),
+		})
 	}
 
-	st.entities["events"] = entityStore(st.eventIDs, st.eventsByID)
-	st.entities["content"] = entityStore(st.contentIDs, st.contentByID)
-	st.entities["people"] = entityStore(st.peopleIDs, st.peopleByID)
-	st.entities["locations"] = entityStore(st.locationIDs, st.locationsByID)
-	st.entities["organizations"] = entityStore(st.organizationIDs, st.organizationsByID)
-	st.entities["tags"] = entityStore(st.tagIDs, st.tagsByID)
-	st.entities["tagTypes"] = entityStore(st.tagTypeIDs, st.tagTypesByID)
-	st.entities["articles"] = entityStore(st.articleIDs, st.articlesByID)
-	st.entities["documents"] = entityStore(st.documentIDs, st.documentsByID)
 	return st, nil
 }
 
-func buildEventModel(event hackertracker.Event, locationIDs, personIDs, tagIDs, contentIDs map[int]bool, timezone string) (map[string]any, error) {
-	id, ok := export.NormalizeID(event.ID)
-	if !ok {
-		return nil, fmt.Errorf("event missing id")
+func entities(st *stores) map[string]any {
+	return map[string]any{
+		"content":       entityStore(st.contentIDs, st.contentByID),
+		"sessions":      entityStore(st.sessionIDs, st.sessionsByID),
+		"people":        entityStore(st.peopleIDs, st.peopleByID),
+		"locations":     entityStore(st.locationIDs, st.locationsByID),
+		"organizations": entityStore(st.organizationIDs, st.organizationsByID),
+		"tags":          entityStore(st.tagIDs, st.tagsByID),
+		"tagTypes":      entityStore(st.tagTypeIDs, st.tagTypesByID),
+		"articles":      entityStore(st.articleIDs, st.articlesByID),
+		"documents":     entityStore(st.documentIDs, st.documentsByID),
 	}
-	speakerRaw := make([]any, 0, len(event.Speakers))
-	for _, speaker := range event.Speakers {
-		speakerRaw = append(speakerRaw, speaker.ID)
-	}
-	personRaw := make([]any, 0, len(event.People))
-	for _, person := range event.People {
-		personRaw = append(personRaw, person.PersonID)
-	}
-	speakerIDs := export.UniqueIDs(speakerRaw, personIDs)
-	personIDsOut := export.UniqueIDs(personRaw, personIDs)
-	tagIDsOut := export.UniqueIDs(event.TagIDs, tagIDs)
-	sort.Ints(speakerIDs)
-	sort.Ints(personIDsOut)
-	sort.Ints(tagIDsOut)
-
-	locationID := 0
-	if event.Location != nil {
-		locationID, ok = export.NormalizeID(event.Location.ID)
-	}
-	if !ok {
-		locationID, ok = export.NormalizeID(event.LocationID)
-	}
-	var resolvedLocation any
-	if ok && locationIDs[locationID] {
-		resolvedLocation = locationID
-	}
-	contentID, ok := export.NormalizeID(event.ContentID)
-	var resolvedContent any
-	if ok && contentIDs[contentID] {
-		resolvedContent = contentID
-	}
-
-	model := map[string]any{
-		"begin":        event.BeginTSZ,
-		"beginDisplay": export.EventTimeTable(event.BeginTSZ, true, timezone),
-		"beginIso":     export.ISOTime(event.BeginTSZ),
-		"contentId":    resolvedContent,
-		"end":          event.EndTSZ,
-		"endDisplay":   export.EventTimeTable(event.EndTSZ, false, timezone),
-		"endIso":       export.ISOTime(event.EndTSZ),
-		"id":           id,
-		"locationId":   resolvedLocation,
-		"title":        event.Title,
-	}
-	if len(speakerIDs) > 0 {
-		model["speakerIds"] = speakerIDs
-	}
-	if len(personIDsOut) > 0 {
-		model["personIds"] = personIDsOut
-	}
-	if len(tagIDsOut) > 0 {
-		model["tagIds"] = tagIDsOut
-	}
-	if event.Type != nil && event.Type.Color != "" {
-		model["color"] = event.Type.Color
-	}
-	return model, nil
 }
 
-func buildContentModel(item hackertracker.Content, personIDs, tagIDs, contentIDs map[int]bool) (map[string]any, error) {
-	id, ok := export.NormalizeID(item.ID)
+func buildContentModel(item hackertracker.Content, personIDs, tagIDs, contentIDs, locationIDs map[int]bool, timezone string) (ContentModel, []SessionModel, error) {
+	id, ok := normalizeID(item.ID)
 	if !ok {
-		return nil, fmt.Errorf("content item missing id")
-	}
-	tagIDsOut := export.UniqueIDs(item.TagIDs, tagIDs)
-	sort.Ints(tagIDsOut)
-	related := export.UniqueIDs(item.RelatedContentIDs, contentIDs)
-	sort.Ints(related)
-	sessionRaw := make([]any, 0, len(item.Sessions))
-	for _, session := range item.Sessions {
-		sessionRaw = append(sessionRaw, session.SessionID)
-	}
-	sessions := export.UniqueIDs(sessionRaw, nil)
-	sort.Ints(sessions)
-
-	model := map[string]any{"id": id, "relatedContentIds": related, "sessions": sessions, "title": item.Title}
-	if item.Description != "" {
-		model["description"] = item.Description
-	}
-	if len(item.Links) > 0 {
-		model["links"] = linksToAny(item.Links)
-	}
-	if len(tagIDsOut) > 0 {
-		model["tagIds"] = tagIDsOut
+		return ContentModel{}, nil, fmt.Errorf("content item missing id")
 	}
 
-	peopleEntries := []map[string]any{}
-	peopleOrder := map[int]*int{}
-	for _, person := range item.People {
-		personID, ok := export.NormalizeID(person.PersonID)
-		if !ok || !personIDs[personID] {
+	tagIDsOut := uniqueIDs(item.TagIDs, tagIDs)
+	slices.Sort(tagIDsOut)
+	related := uniqueIDs(item.RelatedContentIDs, contentIDs)
+	slices.Sort(related)
+
+	people := buildContentPeople(item.People, personIDs)
+	sessionPersonIDs := contentPersonIDs(people)
+
+	sessions := make([]SessionModel, 0, len(item.Sessions))
+	sessionIDs := make([]int, 0, len(item.Sessions))
+	seenSessionIDs := map[int]bool{}
+	for _, sourceSession := range item.Sessions {
+		session, err := buildSessionModel(sourceSession, id, item.Title, sessionPersonIDs, tagIDsOut, locationIDs, timezone)
+		if err != nil {
+			return ContentModel{}, nil, fmt.Errorf("content %d: %w", id, err)
+		}
+		if seenSessionIDs[session.ID] {
 			continue
 		}
-		order := export.NormalizeOrder(person.SortOrder)
-		peopleEntries = append(peopleEntries, map[string]any{"personId": personID, "sortOrder": nullableIntPtr(order)})
-		peopleOrder[personID] = order
+		seenSessionIDs[session.ID] = true
+		sessionIDs = append(sessionIDs, session.ID)
+		sessions = append(sessions, session)
 	}
-	seen := map[int]bool{}
-	peopleIDs := []int{}
-	for _, entry := range peopleEntries {
-		personID := entry["personId"].(int)
-		if seen[personID] {
+	slices.Sort(sessionIDs)
+
+	return ContentModel{
+		ID:                id,
+		RelatedContentIDs: related,
+		Sessions:          sessionIDs,
+		Title:             item.Title,
+		Description:       item.Description,
+		Links:             linksToModels(item.Links),
+		TagIDs:            tagIDsOut,
+		People:            people,
+	}, sessions, nil
+}
+
+func buildContentPeople(sourcePeople []hackertracker.ContentPerson, validPersonIDs map[int]bool) []ContentPersonModel {
+	peopleByID := map[int]ContentPersonModel{}
+	for _, person := range sourcePeople {
+		personID, ok := normalizeID(person.PersonID)
+		if !ok || !validPersonIDs[personID] {
 			continue
 		}
-		seen[personID] = true
-		peopleIDs = append(peopleIDs, personID)
+		if _, exists := peopleByID[personID]; exists {
+			continue
+		}
+		peopleByID[personID] = ContentPersonModel{PersonID: personID, SortOrder: intPtrFromValue(person.SortOrder)}
 	}
-	sort.Slice(peopleIDs, func(i, j int) bool {
-		a := peopleOrder[peopleIDs[i]]
-		b := peopleOrder[peopleIDs[j]]
-		if (a == nil) != (b == nil) {
-			return a != nil
-		}
-		if a != nil && b != nil && *a != *b {
-			return *a < *b
-		}
-		return peopleIDs[i] < peopleIDs[j]
-	})
-	if len(peopleIDs) > 0 {
-		people := make([]any, 0, len(peopleIDs))
-		for _, personID := range peopleIDs {
-			people = append(people, map[string]any{"personId": personID, "sortOrder": nullableIntPtr(peopleOrder[personID])})
-		}
-		model["people"] = people
+
+	people := make([]ContentPersonModel, 0, len(peopleByID))
+	for _, person := range peopleByID {
+		people = append(people, person)
 	}
-	return model, nil
+	slices.SortFunc(people, compareContentPeople)
+	return people
 }
 
-func buildPersonModel(person hackertracker.Speaker, contentIDs map[int]bool) (map[string]any, error) {
-	id, ok := export.NormalizeID(person.ID)
+func buildSessionModel(sourceSession hackertracker.Session, contentID int, contentTitle string, personIDs []int, tagIDs []int, validLocationIDs map[int]bool, timezone string) (SessionModel, error) {
+	id, ok := sourceSessionID(sourceSession)
 	if !ok {
-		return nil, fmt.Errorf("person missing id")
+		return SessionModel{}, fmt.Errorf("session missing id")
 	}
-	contentIDsOut := export.UniqueIDs(person.ContentIDs, contentIDs)
-	sort.Ints(contentIDsOut)
-	model := map[string]any{"contentIds": contentIDsOut, "id": id, "name": person.Name}
-	if person.Description != "" {
-		model["description"] = person.Description
+
+	var locationID *int
+	if id, ok := normalizeID(sourceSession.LocationID); ok && (validLocationIDs == nil || validLocationIDs[id]) {
+		locationID = &id
 	}
-	if person.Pronouns != "" {
-		model["pronouns"] = person.Pronouns
-	}
-	if person.Title != "" {
-		model["title"] = person.Title
-	}
-	if len(person.Affiliations) > 0 {
-		items := make([]any, len(person.Affiliations))
-		for i, value := range person.Affiliations {
-			items[i] = value
-		}
-		model["affiliations"] = items
-	}
-	if person.Avatar != nil && person.Avatar.URL != "" {
-		model["avatarUrl"] = person.Avatar.URL
-	}
-	if len(person.Links) > 0 {
-		model["links"] = linksToAny(person.Links)
-	}
-	return model, nil
+
+	begin := timestampString(sourceSession.BeginTSZ, sourceSession.BeginTimestamp)
+	end := timestampString(sourceSession.EndTSZ, sourceSession.EndTimestamp)
+
+	return SessionModel{
+		ID:                    id,
+		ContentID:             contentID,
+		Title:                 contentTitle,
+		Begin:                 begin,
+		BeginDisplay:          sessionTimeTable(begin, true, timezone),
+		BeginIso:              isoTime(begin),
+		BeginTimestampSeconds: timestampSeconds(begin),
+		End:                   end,
+		EndDisplay:            sessionTimeTable(end, false, timezone),
+		EndIso:                isoTime(end),
+		EndTimestampSeconds:   timestampSeconds(end),
+		LocationID:            locationID,
+		PersonIDs:             slices.Clone(personIDs),
+		TagIDs:                slices.Clone(tagIDs),
+		ChannelID:             sourceSession.ChannelID,
+		RecordingPolicyID:     sourceSession.RecordingPolicyID,
+		TimezoneName:          sourceSession.TimezoneName,
+	}, nil
 }
 
-func buildOrganizationModel(org hackertracker.Organization, tagIDs map[int]bool) (map[string]any, error) {
-	id, ok := export.NormalizeID(org.ID)
+func buildPersonModel(person hackertracker.Speaker, contentIDs map[int]bool) (PersonModel, error) {
+	id, ok := normalizeID(person.ID)
 	if !ok {
-		return nil, fmt.Errorf("organization missing id")
+		return PersonModel{}, fmt.Errorf("person missing id")
 	}
-	tags := export.UniqueIDs(org.TagIDs, tagIDs)
-	sort.Ints(tags)
-	var tagIDAsOrganizer any
-	if tagID, ok := export.NormalizeID(org.TagIDAsOrganizer); ok {
-		tagIDAsOrganizer = tagID
+	rawContentIDs := person.ContentIDs
+	if len(rawContentIDs) == 0 {
+		rawContentIDs = person.LegacyContentIDs
 	}
-	model := map[string]any{
-		"description":      org.Description,
-		"id":               id,
-		"links":            linksToAny(org.Links),
-		"name":             org.Name,
-		"tagIdAsOrganizer": tagIDAsOrganizer,
-	}
-	if org.Logo != nil && org.Logo.URL != "" {
-		model["logoUrl"] = org.Logo.URL
-	}
-	if len(tags) > 0 {
-		model["tagIds"] = tags
-	}
-	return model, nil
+	contentIDsOut := uniqueIDs(rawContentIDs, contentIDs)
+	slices.Sort(contentIDsOut)
+
+	return PersonModel{
+		ContentIDs:   contentIDsOut,
+		ID:           id,
+		Name:         person.Name,
+		Description:  person.Description,
+		Pronouns:     person.Pronouns,
+		Title:        person.Title,
+		Affiliations: slices.Clone([]string(person.Affiliations)),
+		AvatarURL:    avatarURL(person.Avatar),
+		Links:        linksToModels(person.Links),
+	}, nil
 }
 
-func buildTags(tagTypes []hackertracker.TagType) []map[string]any {
-	tags := []map[string]any{}
-	for _, group := range tagTypes {
-		typeID, _ := export.NormalizeID(group.ID)
-		for _, tag := range group.Tags {
-			id, ok := export.NormalizeID(tag.ID)
-			if !ok {
-				continue
-			}
-			tags = append(tags, map[string]any{
-				"colorBackground": tag.ColorBackground,
-				"colorForeground": tag.ColorForeground,
-				"id":              id,
-				"label":           tag.Label,
-				"sortOrder":       nullableInt(tag.SortOrder),
-				"tagTypeId":       typeID,
-			})
+func buildOrganizationModel(org hackertracker.Organization, tagIDs map[int]bool) (OrganizationModel, error) {
+	id, ok := normalizeID(org.ID)
+	if !ok {
+		return OrganizationModel{}, fmt.Errorf("organization missing id")
+	}
+	tags := uniqueIDs(org.TagIDs, tagIDs)
+	slices.Sort(tags)
+
+	var tagIDAsOrganizer *int
+	if org.TagIDAsOrganizer != nil {
+		if tagID, ok := normalizeID(*org.TagIDAsOrganizer); ok {
+			tagIDAsOrganizer = &tagID
 		}
 	}
-	sort.Slice(tags, func(i, j int) bool {
-		return compareTags(tags[i], tags[j]) < 0
-	})
+
+	return OrganizationModel{
+		Description:      org.Description,
+		ID:               id,
+		Links:            linksToModels(org.Links),
+		Name:             org.Name,
+		TagIDAsOrganizer: tagIDAsOrganizer,
+		LogoURL:          org.Logo.URL,
+		TagIDs:           tags,
+	}, nil
+}
+
+func buildTags(data hackertracker.SourceData) []TagModel {
+	tags := []TagModel{}
+	for _, tag := range sourceTags(data) {
+		id, ok := normalizeID(tag.ID)
+		if !ok {
+			continue
+		}
+		tags = append(tags, TagModel{
+			ColorBackground: tag.ColorBackground,
+			ColorForeground: tag.ColorForeground,
+			ID:              id,
+			Label:           tag.Label,
+			SortOrder:       intPtrFromValue(tag.SortOrder),
+			TagTypeID:       tag.TagTypeID,
+		})
+	}
+	slices.SortFunc(tags, compareTags)
 	return tags
 }
 
-func buildEventSources(data hackertracker.SourceData) []hackertracker.Event {
-	eventByID := map[int]hackertracker.Event{}
-	for _, event := range data.Events {
-		if id, ok := export.NormalizeID(event.ID); ok {
-			eventByID[id] = event
+func sourceTags(data hackertracker.SourceData) []hackertracker.Tag {
+	tags := []hackertracker.Tag{}
+	for _, group := range data.TagTypes {
+		typeID, _ := normalizeID(group.ID)
+		for _, tag := range group.Tags {
+			tag.TagTypeID = typeID
+			tags = append(tags, tag)
 		}
 	}
-	sessionEventIDs := map[int]bool{}
-	sessionEvents := []hackertracker.Event{}
-	for _, content := range data.Content {
-		for _, session := range content.Sessions {
-			sessionID, ok := export.NormalizeID(session.SessionID)
-			if !ok {
-				continue
-			}
-			existing := eventByID[sessionID]
-			locationID, locationOK := export.NormalizeID(session.LocationID)
-			if !locationOK {
-				if existing.Location != nil {
-					locationID, locationOK = export.NormalizeID(existing.Location.ID)
-				}
-				if !locationOK {
-					locationID, locationOK = export.NormalizeID(existing.LocationID)
-				}
-			}
-			people := existing.People
-			if len(content.People) > 0 {
-				people = make([]hackertracker.EventPerson, 0, len(content.People))
-				for _, person := range content.People {
-					people = append(people, hackertracker.EventPerson{PersonID: person.PersonID})
-				}
-			}
-			speakers := existing.Speakers
-			if len(speakers) == 0 && len(people) > 0 {
-				for _, person := range people {
-					speakers = append(speakers, hackertracker.Ref{ID: person.PersonID})
-				}
-			}
-			event := existing
-			event.ID = sessionID
-			if content.Title != "" {
-				event.Title = content.Title
-			}
-			if content.ID != nil {
-				event.ContentID = content.ID
-			}
-			if session.BeginTSZ != "" {
-				event.BeginTSZ = session.BeginTSZ
-			}
-			if session.EndTSZ != "" {
-				event.EndTSZ = session.EndTSZ
-			}
-			if locationOK {
-				event.LocationID = locationID
-				event.Location = &hackertracker.Ref{ID: locationID}
-			}
-			event.People = people
-			event.Speakers = speakers
-			if len(content.TagIDs) > 0 {
-				event.TagIDs = content.TagIDs
-			}
-			sessionEventIDs[sessionID] = true
-			sessionEvents = append(sessionEvents, event)
-		}
-	}
-	if len(sessionEvents) == 0 {
-		return data.Events
-	}
-	out := append([]hackertracker.Event{}, sessionEvents...)
-	for _, event := range data.Events {
-		if id, ok := export.NormalizeID(event.ID); ok && !sessionEventIDs[id] {
-			out = append(out, event)
-		}
-	}
-	return out
+	return tags
 }
 
-func putEntity(store map[int]map[string]any, ids *[]int, model map[string]any) {
-	id := model["id"].(int)
+func sourceSessionID(session hackertracker.Session) (int, bool) {
+	return normalizeID(session.SessionID)
+}
+
+func contentPersonIDs(people []ContentPersonModel) []int {
+	ids := make([]int, 0, len(people))
+	for _, person := range people {
+		ids = append(ids, person.PersonID)
+	}
+	return ids
+}
+
+func putEntity[T interface{ entityID() int }](store map[int]T, ids *[]int, model T) {
+	id := model.entityID()
 	if _, exists := store[id]; exists {
 		return
 	}
 	store[id] = model
 	*ids = append(*ids, id)
-	sort.Ints(*ids)
 }
 
-func entityStore(ids []int, byID map[int]map[string]any) map[string]any {
-	sort.Ints(ids)
-	byIDOut := map[string]any{}
+func (m ContentModel) entityID() int      { return m.ID }
+func (m SessionModel) entityID() int      { return m.ID }
+func (m PersonModel) entityID() int       { return m.ID }
+func (m LocationModel) entityID() int     { return m.ID }
+func (m OrganizationModel) entityID() int { return m.ID }
+func (m TagModel) entityID() int          { return m.ID }
+func (m TagTypeModel) entityID() int      { return m.ID }
+func (m ArticleModel) entityID() int      { return m.ID }
+func (m DocumentModel) entityID() int     { return m.ID }
+
+func entityStore[T any](ids []int, byID map[int]T) EntityStore[T] {
+	slices.Sort(ids)
+	byIDOut := map[string]T{}
 	for _, id := range ids {
 		byIDOut[fmt.Sprint(id)] = byID[id]
 	}
-	return map[string]any{"allIds": ids, "byId": byIDOut}
+	return EntityStore[T]{AllIDs: slices.Clone(ids), ByID: byIDOut}
 }
 
-func nullableString(value string) any {
-	if value == "" {
-		return nil
-	}
-	return value
-}
-
-func nullableStringPtr(value *string) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func nullableInt(value any) any {
-	if id, ok := export.NormalizeID(value); ok {
-		return id
-	}
-	return nil
-}
-
-func nullableIntPtr(value *int) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func nullableInt64(value *int64) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func linksToAny(links []map[string]any) []any {
-	out := make([]any, 0, len(links))
+func linksToModels(links []hackertracker.Link) []LinkModel {
+	out := make([]LinkModel, 0, len(links))
 	for _, link := range links {
-		item := map[string]any{}
-		for key, value := range link {
-			item[key] = value
+		if link.Label == "" && link.Type == "" && link.URL == "" {
+			continue
 		}
-		out = append(out, item)
+		out = append(out, LinkModel{Label: link.Label, Type: link.Type, URL: link.URL})
 	}
 	return out
 }
 
-func compareTags(a, b map[string]any) int {
-	ao, _ := export.NormalizeID(a["sortOrder"])
-	bo, _ := export.NormalizeID(b["sortOrder"])
-	if ao != bo {
-		if ao < bo {
+func compareTags(a, b TagModel) int {
+	return cmp.Or(
+		compareOptionalInts(a.SortOrder, b.SortOrder),
+		alphaCompare(a.Label, b.Label),
+		cmp.Compare(a.ID, b.ID),
+	)
+}
+
+func compareContentPeople(a, b ContentPersonModel) int {
+	return cmp.Or(
+		compareOptionalInts(a.SortOrder, b.SortOrder),
+		cmp.Compare(a.PersonID, b.PersonID),
+	)
+}
+
+func compareOptionalInts(a, b *int) int {
+	if (a == nil) != (b == nil) {
+		if a != nil {
 			return -1
 		}
 		return 1
 	}
-	if c := alphaCompare(fmt.Sprint(a["label"]), fmt.Sprint(b["label"])); c != 0 {
-		return c
+	if a == nil {
+		return 0
 	}
-	ai, _ := export.NormalizeID(a["id"])
-	bi, _ := export.NormalizeID(b["id"])
-	if ai < bi {
-		return -1
-	}
-	if ai > bi {
-		return 1
-	}
-	return 0
-}
-
-func alphaLess(a, b string) bool {
-	return alphaCompare(a, b) < 0
+	return cmp.Compare(*a, *b)
 }
 
 func alphaCompare(a, b string) int {
-	ak := alphaSortKey(a)
-	bk := alphaSortKey(b)
-	if ak < bk {
-		return -1
-	}
-	if ak > bk {
-		return 1
-	}
-	return 0
+	return strings.Compare(alphaSortKey(a), alphaSortKey(b))
 }
 
 func alphaSortKey(value string) string {
@@ -655,11 +613,8 @@ func alphaSortKey(value string) string {
 	return "8:" + lower
 }
 
-func normalizeForSearch(text any) string {
-	if text == nil {
-		return ""
-	}
-	lowered := strings.ToLower(fmt.Sprint(text))
+func normalizeForSearch(text string) string {
+	lowered := strings.ToLower(text)
 	var b strings.Builder
 	hadSpace := false
 	for _, r := range lowered {
@@ -719,14 +674,6 @@ func foldLatinAccent(r rune) rune {
 	}
 }
 
-func foldString(value string) string {
-	var b strings.Builder
-	for _, r := range value {
-		b.WriteRune(foldLatinAccent(r))
-	}
-	return b.String()
-}
-
 func foldSortString(value string) string {
 	var b strings.Builder
 	for _, r := range value {
@@ -753,4 +700,11 @@ func foldSortString(value string) string {
 		b.WriteRune(foldLatinAccent(r))
 	}
 	return b.String()
+}
+
+func avatarURL(asset *hackertracker.Asset) string {
+	if asset == nil {
+		return ""
+	}
+	return asset.URL
 }
