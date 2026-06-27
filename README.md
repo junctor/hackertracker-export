@@ -123,6 +123,7 @@ The `info` command writes:
 
 ```text
 out/ht/<lowercase-conference>/
+  conference.json
   manifest.json
 
   derived/

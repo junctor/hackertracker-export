@@ -166,7 +166,8 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export
 			"schemaVersion":  2,
 			"timezone":       conf.Timezone,
 		},
-		Entities: entities(st),
+		Conference: conf,
+		Entities:   entities(st),
 		Indexes: map[string]any{
 			"sessionsByDay": indexes.sessionsByDay,
 			"sessionsByTag": indexes.sessionsByTag,

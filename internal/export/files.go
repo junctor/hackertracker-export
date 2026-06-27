@@ -11,12 +11,13 @@ import (
 )
 
 type Artifacts struct {
-	Manifest any
-	Entities map[string]any
-	Indexes  map[string]any
-	Views    map[string]any
-	Derived  map[string]any
-	Details  map[string]map[int]any
+	Manifest   any
+	Conference any
+	Entities   map[string]any
+	Indexes    map[string]any
+	Views      map[string]any
+	Derived    map[string]any
+	Details    map[string]map[int]any
 }
 
 var generatedDirs = [...]string{"entities", "indexes", "views", "details", "derived"}
@@ -65,6 +66,9 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	}
 
 	if err := write("manifest.json", artifacts.Manifest); err != nil {
+		return nil, err
+	}
+	if err := write("conference.json", artifacts.Conference); err != nil {
 		return nil, err
 	}
 	for _, name := range []string{"articles", "content", "documents", "locations", "organizations", "people", "sessions", "tags", "tagTypes"} {
