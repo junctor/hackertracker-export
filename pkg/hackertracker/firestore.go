@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func DecodeSourceData(raw map[string][]map[string]any) (SourceData, error) {
+func decodeSourceData(raw map[string][]map[string]any) (SourceData, error) {
 	var data SourceData
 	if err := decodeCollection(raw["articles"], &data.Articles); err != nil {
 		return data, fmt.Errorf("articles: %w", err)
@@ -21,9 +21,6 @@ func DecodeSourceData(raw map[string][]map[string]any) (SourceData, error) {
 	}
 	if err := decodeCollection(raw["locations"], &data.Locations); err != nil {
 		return data, fmt.Errorf("locations: %w", err)
-	}
-	if err := decodeCollection(raw["menus"], &data.Menus); err != nil {
-		return data, fmt.Errorf("menus: %w", err)
 	}
 	if err := decodeCollection(raw["organizations"], &data.Organizations); err != nil {
 		return data, fmt.Errorf("organizations: %w", err)
