@@ -3,7 +3,6 @@ package hackertracker
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 )
@@ -37,9 +36,18 @@ type Conference struct {
 	HomeMenuID                    int              `json:"home_menu_id" firestore:"home_menu_id"`
 	Link                          string           `json:"link" firestore:"link"`
 	Maps                          []map[string]any `json:"maps" firestore:"maps"`
+	Media                         ConferenceMedia  `json:"media" firestore:"media"`
 	MerchMandatoryAcknowledgement string           `json:"merch_mandatory_acknowledgement" firestore:"merch_mandatory_acknowledgement"`
 	MerchTaxStatement             string           `json:"merch_tax_statement" firestore:"merch_tax_statement"`
 	SupportDoc                    string           `json:"supportdoc" firestore:"supportdoc"`
+}
+
+type ConferenceMedia map[string]ConferenceMediaTheme
+
+type ConferenceMediaTheme struct {
+	BannerBackground *string `json:"banner_background" firestore:"banner_background"`
+	BannerLogo       *string `json:"banner_logo" firestore:"banner_logo"`
+	SquareLogo       *string `json:"square_logo" firestore:"square_logo"`
 }
 
 type Link struct {
@@ -61,10 +69,6 @@ type Asset struct {
 	OrgaID     int    `json:"orga_id,omitempty" firestore:"orga_id"`
 	SortOrder  int    `json:"sort_order,omitempty" firestore:"sort_order"`
 	URL        string `json:"url,omitempty" firestore:"url"`
-}
-
-type Ref struct {
-	ID int `json:"id,omitempty" firestore:"id"`
 }
 
 type Article struct {
@@ -196,7 +200,7 @@ type Speaker struct {
 	Media            []Asset      `json:"media" firestore:"media"`
 	Twitter          string       `json:"twitter" firestore:"twitter"`
 	ContentIDs       []int        `json:"content_ids" firestore:"content_ids"`
-	EventIDs         []int        `json:"event_ids" firestore:"event_ids"`
+	LegacyContentIDs []int        `json:"event_ids" firestore:"event_ids"`
 	UpdatedAt        string       `json:"updated_at" firestore:"updated_at"`
 	UpdatedTimestamp time.Time    `json:"updated_timestamp" firestore:"updated_timestamp"`
 	UpdatedTSZ       string       `json:"updated_tsz" firestore:"updated_tsz"`
@@ -273,6 +277,7 @@ type TagType struct {
 
 type Tag struct {
 	ID              int    `json:"id" firestore:"id"`
+	TagTypeID       int    `json:"tag_type_id,omitempty" firestore:"tag_type_id"`
 	Label           string `json:"label" firestore:"label"`
 	Description     string `json:"description" firestore:"description"`
 	ColorBackground string `json:"color_background" firestore:"color_background"`
@@ -282,27 +287,10 @@ type Tag struct {
 
 type SourceData struct {
 	Articles      []Article
-	Conference    *Conference
 	Content       []Content
 	Documents     []Document
 	Locations     []Location
-	Menus         []Menu
 	Organizations []Organization
 	Speakers      []Speaker
 	TagTypes      []TagType
-}
-
-var collections = [...]string{
-	"articles",
-	"content",
-	"documents",
-	"locations",
-	"menus",
-	"organizations",
-	"speakers",
-	"tagtypes",
-}
-
-func CollectionNames() []string {
-	return slices.Clone(collections[:])
 }
