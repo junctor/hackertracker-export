@@ -53,6 +53,7 @@ type ContentPersonModel struct {
 
 type ContentModel struct {
 	ID                int                  `json:"id"`
+	Color             string               `json:"color"`
 	RelatedContentIDs []int                `json:"relatedContentIds"`
 	Sessions          []int                `json:"sessions"`
 	Title             string               `json:"title"`
@@ -65,6 +66,7 @@ type ContentModel struct {
 type SessionModel struct {
 	ID                    int    `json:"id"`
 	ContentID             int    `json:"contentId"`
+	Color                 string `json:"color"`
 	Title                 string `json:"title"`
 	Begin                 string `json:"begin"`
 	BeginDisplay          string `json:"beginDisplay,omitempty"`
@@ -278,6 +280,7 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 			SortOrder:   intPtrFromValue(tagType.SortOrder),
 		})
 	}
+	applyContentAccentColors(st)
 	for _, article := range data.Articles {
 		id, ok := normalizeID(article.ID)
 		if !ok {

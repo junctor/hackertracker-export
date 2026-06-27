@@ -120,7 +120,7 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionView
 		BeginDisplay:          firstNonEmpty(session.BeginDisplay, sessionTimeTable(session.Begin, true, "")),
 		BeginIso:              firstNonEmpty(session.BeginIso, isoTime(session.Begin)),
 		BeginTimestampSeconds: session.BeginTimestampSeconds,
-		Color:                 "",
+		Color:                 session.Color,
 		ContentEntity:         contentEntity,
 		ContentID:             session.ContentID,
 		End:                   session.End,
