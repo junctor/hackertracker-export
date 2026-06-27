@@ -172,7 +172,7 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export
 			"sessionsByTag": indexes.sessionsByTag,
 		},
 		Views:   views,
-		Derived: map[string]any{"tagIdsByLabel": buildTagIDsByLabel(data.TagTypes)},
+		Derived: map[string]any{"tagIdsByLabel": buildTagIDsByLabel(data)},
 		Details: details,
 	}, nil
 }
@@ -194,16 +194,14 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 			refs.locationIDs[id] = true
 		}
 	}
-	for _, person := range data.Speakers {
-		if id, ok := normalizeID(person.ID); ok {
+	for _, speaker := range data.Speakers {
+		if id, ok := normalizeID(speaker.ID); ok {
 			refs.personIDs[id] = true
 		}
 	}
-	for _, group := range data.TagTypes {
-		for _, tag := range group.Tags {
-			if id, ok := normalizeID(tag.ID); ok {
-				refs.tagIDs[id] = true
-			}
+	for _, tag := range sourceTags(data) {
+		if id, ok := normalizeID(tag.ID); ok {
+			refs.tagIDs[id] = true
 		}
 	}
 	for _, item := range data.Content {
@@ -225,7 +223,7 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 	}
 
 	for _, item := range data.Content {
-		content, sessions, err := buildContentModels(item, refs.personIDs, refs.tagIDs, refs.contentIDs, refs.locationIDs, timezone)
+		content, sessions, err := buildContentModel(item, refs.personIDs, refs.tagIDs, refs.contentIDs, refs.locationIDs, timezone)
 		if err != nil {
 			return nil, err
 		}
@@ -234,8 +232,8 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 			putEntity(st.sessionsByID, &st.sessionIDs, session)
 		}
 	}
-	for _, person := range data.Speakers {
-		model, err := buildPersonModel(person, refs.contentIDs)
+	for _, speaker := range data.Speakers {
+		model, err := buildPersonModel(speaker, refs.contentIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -263,7 +261,7 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 		}
 		putEntity(st.organizationsByID, &st.organizationIDs, model)
 	}
-	for _, tag := range buildTags(data.TagTypes) {
+	for _, tag := range buildTags(data) {
 		putEntity(st.tagsByID, &st.tagIDs, tag)
 	}
 	for _, tagType := range data.TagTypes {
@@ -321,7 +319,7 @@ func entities(st *stores) map[string]any {
 	}
 }
 
-func buildContentModels(item hackertracker.Content, personIDs, tagIDs, contentIDs, locationIDs map[int]bool, timezone string) (ContentModel, []SessionModel, error) {
+func buildContentModel(item hackertracker.Content, personIDs, tagIDs, contentIDs, locationIDs map[int]bool, timezone string) (ContentModel, []SessionModel, error) {
 	id, ok := normalizeID(item.ID)
 	if !ok {
 		return ContentModel{}, nil, fmt.Errorf("content item missing id")
@@ -333,16 +331,13 @@ func buildContentModels(item hackertracker.Content, personIDs, tagIDs, contentID
 	slices.Sort(related)
 
 	people := buildContentPeople(item.People, personIDs)
-	contentPersonIDs := make([]int, 0, len(people))
-	for _, person := range people {
-		contentPersonIDs = append(contentPersonIDs, person.PersonID)
-	}
+	sessionPersonIDs := contentPersonIDs(people)
 
 	sessions := make([]SessionModel, 0, len(item.Sessions))
 	sessionIDs := make([]int, 0, len(item.Sessions))
 	seenSessionIDs := map[int]bool{}
 	for _, sourceSession := range item.Sessions {
-		session, err := buildSessionModel(sourceSession, id, item.Title, contentPersonIDs, tagIDsOut, locationIDs, timezone)
+		session, err := buildSessionModel(sourceSession, id, item.Title, sessionPersonIDs, tagIDsOut, locationIDs, timezone)
 		if err != nil {
 			return ContentModel{}, nil, fmt.Errorf("content %d: %w", id, err)
 		}
@@ -389,7 +384,7 @@ func buildContentPeople(sourcePeople []hackertracker.ContentPerson, validPersonI
 }
 
 func buildSessionModel(sourceSession hackertracker.Session, contentID int, contentTitle string, personIDs []int, tagIDs []int, validLocationIDs map[int]bool, timezone string) (SessionModel, error) {
-	id, ok := normalizeID(sourceSession.SessionID)
+	id, ok := sourceSessionID(sourceSession)
 	if !ok {
 		return SessionModel{}, fmt.Errorf("session missing id")
 	}
@@ -430,7 +425,7 @@ func buildPersonModel(person hackertracker.Speaker, contentIDs map[int]bool) (Pe
 	}
 	rawContentIDs := person.ContentIDs
 	if len(rawContentIDs) == 0 {
-		rawContentIDs = person.EventIDs
+		rawContentIDs = person.LegacyContentIDs
 	}
 	contentIDsOut := uniqueIDs(rawContentIDs, contentIDs)
 	slices.Sort(contentIDsOut)
@@ -474,27 +469,48 @@ func buildOrganizationModel(org hackertracker.Organization, tagIDs map[int]bool)
 	}, nil
 }
 
-func buildTags(tagTypes []hackertracker.TagType) []TagModel {
+func buildTags(data hackertracker.SourceData) []TagModel {
 	tags := []TagModel{}
-	for _, group := range tagTypes {
-		typeID, _ := normalizeID(group.ID)
-		for _, tag := range group.Tags {
-			id, ok := normalizeID(tag.ID)
-			if !ok {
-				continue
-			}
-			tags = append(tags, TagModel{
-				ColorBackground: tag.ColorBackground,
-				ColorForeground: tag.ColorForeground,
-				ID:              id,
-				Label:           tag.Label,
-				SortOrder:       intPtrFromValue(tag.SortOrder),
-				TagTypeID:       typeID,
-			})
+	for _, tag := range sourceTags(data) {
+		id, ok := normalizeID(tag.ID)
+		if !ok {
+			continue
 		}
+		tags = append(tags, TagModel{
+			ColorBackground: tag.ColorBackground,
+			ColorForeground: tag.ColorForeground,
+			ID:              id,
+			Label:           tag.Label,
+			SortOrder:       intPtrFromValue(tag.SortOrder),
+			TagTypeID:       tag.TagTypeID,
+		})
 	}
 	slices.SortFunc(tags, compareTags)
 	return tags
+}
+
+func sourceTags(data hackertracker.SourceData) []hackertracker.Tag {
+	tags := []hackertracker.Tag{}
+	for _, group := range data.TagTypes {
+		typeID, _ := normalizeID(group.ID)
+		for _, tag := range group.Tags {
+			tag.TagTypeID = typeID
+			tags = append(tags, tag)
+		}
+	}
+	return tags
+}
+
+func sourceSessionID(session hackertracker.Session) (int, bool) {
+	return normalizeID(session.SessionID)
+}
+
+func contentPersonIDs(people []ContentPersonModel) []int {
+	ids := make([]int, 0, len(people))
+	for _, person := range people {
+		ids = append(ids, person.PersonID)
+	}
+	return ids
 }
 
 func putEntity[T interface{ entityID() int }](store map[int]T, ids *[]int, model T) {
