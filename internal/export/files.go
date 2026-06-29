@@ -20,7 +20,14 @@ type Artifacts struct {
 	Details    map[string]map[int]any
 }
 
-var generatedDirs = [...]string{"entities", "indexes", "views", "details", "derived"}
+var generatedDirs = [...]string{"views", "details", "derived"}
+
+var prunedDirs = [...]string{"raw", "entities", "indexes"}
+
+var unpublishedWebsiteDetailGroups = map[string]bool{
+	"locations": true,
+	"sessions":  true,
+}
 
 func writeJSON(path string, value any) error {
 	dir := filepath.Dir(path)
@@ -48,6 +55,12 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 			return nil, fmt.Errorf("clear generated directory %q: %w", path, err)
 		}
 	}
+	for _, dir := range prunedDirs {
+		path := filepath.Join(outDir, dir)
+		if err := os.RemoveAll(path); err != nil {
+			return nil, fmt.Errorf("clear unpublished directory %q: %w", path, err)
+		}
+	}
 	for _, dir := range generatedDirs {
 		path := filepath.Join(outDir, dir)
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -70,24 +83,6 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	}
 	if err := write("conference.json", artifacts.Conference); err != nil {
 		return nil, err
-	}
-	for _, name := range []string{"articles", "content", "documents", "locations", "organizations", "people", "sessions", "tags", "tagTypes"} {
-		value, ok := artifacts.Entities[name]
-		if !ok {
-			return nil, fmt.Errorf("missing generated artifact: %s", name)
-		}
-		if err := write(filepath.Join("entities", name+".json"), value); err != nil {
-			return nil, err
-		}
-	}
-	for _, name := range []string{"sessionsByDay", "sessionsByTag"} {
-		value, ok := artifacts.Indexes[name]
-		if !ok {
-			return nil, fmt.Errorf("missing generated artifact: %s", name)
-		}
-		if err := write(filepath.Join("indexes", name+".json"), value); err != nil {
-			return nil, err
-		}
 	}
 	for _, name := range []string{
 		"announcementsList",
@@ -119,6 +114,9 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 
 	groups := slices.Sorted(maps.Keys(artifacts.Details))
 	for _, group := range groups {
+		if unpublishedWebsiteDetailGroups[group] {
+			continue
+		}
 		ids := slices.Sorted(maps.Keys(artifacts.Details[group]))
 		for _, id := range ids {
 			if err := write(filepath.Join("details", group, strconv.Itoa(id)+".json"), artifacts.Details[group][id]); err != nil {
