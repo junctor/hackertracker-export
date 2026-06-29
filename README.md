@@ -129,21 +129,6 @@ out/ht/<lowercase-conference>/
   derived/
     tagIdsByLabel.json
 
-  entities/
-    articles.json
-    content.json
-    documents.json
-    locations.json
-    organizations.json
-    people.json
-    sessions.json
-    tags.json
-    tagTypes.json
-
-  indexes/
-    sessionsByDay.json
-    sessionsByTag.json
-
   views/
     announcementsList.json
     bookmarkSessionsById.json
@@ -159,24 +144,17 @@ out/ht/<lowercase-conference>/
   details/
     content/<id>.json
     documents/<id>.json
-    locations/<id>.json
     organizations/<id>.json
     people/<id>.json
-    sessions/<id>.json
     tags/<id>.json
 ```
 
-Entity files use this shape:
-
-```json
-{
-  "allIds": [123, 456],
-  "byId": {
-    "123": { "id": 123 },
-    "456": { "id": 456 }
-  }
-}
-```
+The website export is runtime-only. It intentionally does not publish
+`raw/**/*.json`, `entities/*.json`, `indexes/*.json`,
+`details/sessions/<id>.json`, or `details/locations/<id>.json`. Session detail
+pages and location detail pages are not part of the current `info.defcon.org`
+runtime contract; content, people, tag, organization, and document details
+remain available under `details/`.
 
 Each `info` run recreates the generated subdirectories so stale JSON is removed.
 
@@ -186,13 +164,13 @@ Raw fetch output follows HackerTracker Firestore collection names. Generated web
 
 | Raw source                       | Generated artifacts                                                     |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| `content`                        | `content`, `sessions`, schedule views, content details, session details |
+| `content`                        | schedule views, content cards, content details                          |
 | `speakers`                       | `people`, people cards, people details                                  |
-| `tagtypes` and embedded tag data | `tags`, `tagTypes`, tag indexes, tag browse views                       |
-| `documents`                      | document entities, document lists, document details                     |
-| `locations`                      | location entities, location cards, location details                     |
-| `organizations`                  | organization entities, organization cards, organization details         |
-| `articles`                       | article entities and announcement views                                 |
+| `tagtypes` and embedded tag data | tag browse views, tag details                                           |
+| `documents`                      | document lists, document details                                        |
+| `locations`                      | location cards                                                          |
+| `organizations`                  | organization cards, organization details                                |
+| `articles`                       | announcement views                                                      |
 
 Use `content` for top-level HackerTracker content records, `sessions` for scheduled instances embedded in content records, `speakers` for the raw Firestore collection, and `people` for generated artifacts derived from speakers.
 
