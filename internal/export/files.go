@@ -1,6 +1,7 @@
 package export
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -18,6 +19,11 @@ type Artifacts struct {
 	Views      map[string]any
 	Derived    map[string]any
 	Details    map[string]map[int]any
+}
+
+type detailLookup struct {
+	ids    []int
+	values map[int]any
 }
 
 var generatedDirs = [...]string{"views", "details", "derived"}
@@ -43,6 +49,36 @@ func writeJSON(path string, value any) error {
 		return fmt.Errorf("write %q: %w", path, err)
 	}
 	return nil
+}
+
+func newDetailLookup(values map[int]any) detailLookup {
+	return detailLookup{
+		ids:    slices.Sorted(maps.Keys(values)),
+		values: values,
+	}
+}
+
+func (lookup detailLookup) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for index, id := range lookup.ids {
+		if index > 0 {
+			buf.WriteByte(',')
+		}
+		key, err := json.Marshal(strconv.Itoa(id))
+		if err != nil {
+			return nil, err
+		}
+		value, err := json.Marshal(lookup.values[id])
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(key)
+		buf.WriteByte(':')
+		buf.Write(value)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
@@ -117,11 +153,8 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 		if unpublishedWebsiteDetailGroups[group] {
 			continue
 		}
-		ids := slices.Sorted(maps.Keys(artifacts.Details[group]))
-		for _, id := range ids {
-			if err := write(filepath.Join("details", group, strconv.Itoa(id)+".json"), artifacts.Details[group][id]); err != nil {
-				return nil, err
-			}
+		if err := write(filepath.Join("details", group+".json"), newDetailLookup(artifacts.Details[group])); err != nil {
+			return nil, err
 		}
 	}
 	slices.Sort(written)

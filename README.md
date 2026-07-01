@@ -142,11 +142,11 @@ out/ht/<lowercase-conference>/
     tagTypesBrowse.json
 
   details/
-    content/<id>.json
-    documents/<id>.json
-    organizations/<id>.json
-    people/<id>.json
-    tags/<id>.json
+    content.json
+    documents.json
+    organizations.json
+    people.json
+    tags.json
 ```
 
 The website export is runtime-only. It intentionally does not publish
@@ -154,7 +154,10 @@ The website export is runtime-only. It intentionally does not publish
 `details/sessions/<id>.json`, or `details/locations/<id>.json`. Session detail
 pages and location detail pages are not part of the current `info.defcon.org`
 runtime contract; content, people, tag, organization, and document details
-remain available under `details/`.
+remain available under `details/` as aggregate lookup files keyed by string id.
+For example, `details/content.json` is a `Record<string, ContentDetailView>`
+replacement for the old `details/content/<id>.json` files, and the same lookup
+shape applies to documents, organizations, people, and tags.
 
 Each `info` run recreates the generated subdirectories so stale JSON is removed.
 
