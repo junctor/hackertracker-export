@@ -57,9 +57,10 @@ type CompactTag struct {
 }
 
 type ContentCard struct {
-	ID    int          `json:"id"`
-	Tags  []CompactTag `json:"tags"`
-	Title string       `json:"title"`
+	ID      int          `json:"id"`
+	LogoURL string       `json:"logoUrl,omitempty"`
+	Tags    []CompactTag `json:"tags"`
+	Title   string       `json:"title"`
 }
 
 type SearchItem struct {
@@ -210,7 +211,7 @@ func buildContentCards(st *stores) []ContentCard {
 		for _, tag := range tags {
 			compactTags = append(compactTags, compactTag(tag))
 		}
-		out = append(out, ContentCard{ID: item.ID, Tags: compactTags, Title: item.Title})
+		out = append(out, ContentCard{ID: item.ID, LogoURL: item.LogoURL, Tags: compactTags, Title: item.Title})
 	}
 	slices.SortFunc(out, func(left, right ContentCard) int {
 		return cmp.Or(

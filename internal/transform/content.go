@@ -3,6 +3,7 @@ package transform
 import (
 	"cmp"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -59,6 +60,7 @@ type ContentModel struct {
 	Title             string               `json:"title"`
 	Description       string               `json:"description,omitempty"`
 	Links             []LinkModel          `json:"links,omitempty"`
+	LogoURL           string               `json:"logoUrl,omitempty"`
 	TagIDs            []int                `json:"tagIds,omitempty"`
 	People            []ContentPersonModel `json:"people,omitempty"`
 }
@@ -361,6 +363,7 @@ func buildContentModel(item hackertracker.Content, personIDs, tagIDs, contentIDs
 		Title:             item.Title,
 		Description:       item.Description,
 		Links:             linksToModels(item.Links),
+		LogoURL:           contentLogoURL(item),
 		TagIDs:            tagIDsOut,
 		People:            people,
 	}, sessions, nil
@@ -554,6 +557,27 @@ func linksToModels(links []hackertracker.Link) []LinkModel {
 		out = append(out, LinkModel{Label: link.Label, Type: link.Type, URL: link.URL})
 	}
 	return out
+}
+
+func contentLogoURL(content hackertracker.Content) string {
+	return normalizedAssetURL(content.Logo.URL)
+}
+
+func normalizedAssetURL(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	switch parsed.Scheme {
+	case "http", "https":
+		return trimmed
+	default:
+		return ""
+	}
 }
 
 func compareTags(a, b TagModel) int {
