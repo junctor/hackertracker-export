@@ -125,11 +125,12 @@ type TagModel struct {
 }
 
 type TagTypeModel struct {
-	Category    *string `json:"category"`
-	ID          int     `json:"id"`
-	IsBrowsable bool    `json:"isBrowsable"`
-	Label       string  `json:"label"`
-	SortOrder   *int    `json:"sortOrder"`
+	Category      *string `json:"category"`
+	ID            int     `json:"id"`
+	IsBrowsable   bool    `json:"isBrowsable"`
+	Label         string  `json:"label"`
+	SortOrder     *int    `json:"sortOrder"`
+	WellKnownUUID string  `json:"wellKnownUuid,omitempty"`
 }
 
 type ArticleModel struct {
@@ -275,11 +276,12 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 			return nil, fmt.Errorf("tag type missing id")
 		}
 		putEntity(st.tagTypesByID, &st.tagTypeIDs, TagTypeModel{
-			Category:    stringPtrOrNil(tagType.Category),
-			ID:          id,
-			IsBrowsable: tagType.IsBrowsable,
-			Label:       tagType.Label,
-			SortOrder:   intPtrFromValue(tagType.SortOrder),
+			Category:      stringPtrOrNil(tagType.Category),
+			ID:            id,
+			IsBrowsable:   tagType.IsBrowsable,
+			Label:         tagType.Label,
+			SortOrder:     intPtrFromValue(tagType.SortOrder),
+			WellKnownUUID: tagType.WellKnownUUID,
 		})
 	}
 	applyContentAccentColors(st)
