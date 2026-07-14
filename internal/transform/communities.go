@@ -43,6 +43,11 @@ type TagTypeBrowse struct {
 	Tags      []TagSummary `json:"tags"`
 }
 
+type tagTypeBrowseGroup struct {
+	tagType TagTypeModel
+	tags    []TagSummary
+}
+
 type DocumentListItem struct {
 	ID          int     `json:"id"`
 	TitleText   *string `json:"titleText"`
@@ -148,8 +153,19 @@ func buildPeopleCards(st *stores) []PeopleCard {
 }
 
 func buildTagTypesBrowse(st *stores) []TagTypeBrowse {
+	usedContentTagIDs := map[int]bool{}
+	for _, contentID := range st.contentIDs {
+		content := st.contentByID[contentID]
+		for _, tagID := range content.TagIDs {
+			usedContentTagIDs[tagID] = true
+		}
+	}
+
 	tagsByType := map[int][]TagSummary{}
 	for _, tagID := range st.tagIDs {
+		if !usedContentTagIDs[tagID] {
+			continue
+		}
 		tag := st.tagsByID[tagID]
 		if tag.TagTypeID == 0 {
 			continue
@@ -157,22 +173,34 @@ func buildTagTypesBrowse(st *stores) []TagTypeBrowse {
 		tagsByType[tag.TagTypeID] = append(tagsByType[tag.TagTypeID], tagSummary(tag))
 	}
 
-	out := []TagTypeBrowse{}
+	groupsByKey := map[string]tagTypeBrowseGroup{}
 	for _, typeID := range st.tagTypeIDs {
 		tagType := st.tagTypesByID[typeID]
-		if !tagType.IsBrowsable || tagType.Category == nil || *tagType.Category != "content" {
+		if tagType.Category == nil || *tagType.Category != "content" {
 			continue
 		}
 		tags := tagsByType[typeID]
 		if len(tags) == 0 {
 			continue
 		}
+		key := tagTypeBrowseGroupKey(tagType)
+		group, exists := groupsByKey[key]
+		if !exists || compareTagTypesForBrowse(tagType, group.tagType) < 0 {
+			group.tagType = tagType
+		}
+		group.tags = append(group.tags, tags...)
+		groupsByKey[key] = group
+	}
+
+	out := []TagTypeBrowse{}
+	for _, group := range groupsByKey {
+		tags := dedupeTagSummaries(group.tags)
 		slices.SortFunc(tags, compareTagSummaries)
 		out = append(out, TagTypeBrowse{
-			Category:  tagType.Category,
-			ID:        tagType.ID,
-			Label:     tagType.Label,
-			SortOrder: tagType.SortOrder,
+			Category:  group.tagType.Category,
+			ID:        group.tagType.ID,
+			Label:     group.tagType.Label,
+			SortOrder: group.tagType.SortOrder,
 			Tags:      tags,
 		})
 	}
@@ -183,6 +211,34 @@ func buildTagTypesBrowse(st *stores) []TagTypeBrowse {
 			cmp.Compare(left.ID, right.ID),
 		)
 	})
+	return out
+}
+
+func tagTypeBrowseGroupKey(tagType TagTypeModel) string {
+	if strings.TrimSpace(tagType.WellKnownUUID) != "" {
+		return "well-known:" + tagType.WellKnownUUID
+	}
+	return idKey(tagType.ID)
+}
+
+func compareTagTypesForBrowse(a, b TagTypeModel) int {
+	return cmp.Or(
+		compareOptionalInts(a.SortOrder, b.SortOrder),
+		alphaCompare(a.Label, b.Label),
+		cmp.Compare(a.ID, b.ID),
+	)
+}
+
+func dedupeTagSummaries(tags []TagSummary) []TagSummary {
+	seen := map[int]bool{}
+	out := []TagSummary{}
+	for _, tag := range tags {
+		if seen[tag.ID] {
+			continue
+		}
+		seen[tag.ID] = true
+		out = append(out, tag)
+	}
 	return out
 }
 
