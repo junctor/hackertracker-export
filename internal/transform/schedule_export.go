@@ -2,8 +2,6 @@ package transform
 
 import (
 	"cmp"
-	"fmt"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,23 +12,15 @@ import (
 )
 
 type scheduleExportSourceIndexes struct {
-	orgIDsByName         map[string][]int
 	orgIDsByOrganizerTag map[int][]int
 	orgIDsByPersonID     map[int][]int
-	speakerLinksByID     map[int][]LinkModel
-	relatedContentByID   map[int][]int
 }
 
 func buildScheduleExport(conf hackertracker.Conference, data hackertracker.SourceData, st *stores) export.ScheduleExport {
 	sourceIndexes := buildScheduleExportSourceIndexes(data, st)
-	confCode := strings.TrimSpace(conf.Code)
-	timezone := strings.TrimSpace(conf.Timezone)
 	conference := export.ScheduleExportConference{
-		Code:        confCode,
-		Name:        cleanText(conf.Name),
-		Description: cleanText(conf.Description),
-		Timezone:    timezone,
-		URL:         publicConferenceURL(confCode),
+		Name:               cleanText(conf.Name),
+		DescriptionSnippet: export.TextSnippet(conf.Description, export.ScheduleTextSnippetLength),
 	}
 
 	sessions := make([]export.ScheduleExportSession, 0, len(st.sessionIDs))
@@ -43,7 +33,7 @@ func buildScheduleExport(conf hackertracker.Conference, data hackertracker.Sourc
 		if !ok {
 			continue
 		}
-		sessions = append(sessions, buildScheduleExportSession(confCode, timezone, session, content, st, sourceIndexes))
+		sessions = append(sessions, buildScheduleExportSession(session, content, st, sourceIndexes))
 	}
 	slices.SortFunc(sessions, func(a, b export.ScheduleExportSession) int {
 		return cmp.Or(
@@ -61,13 +51,10 @@ func buildScheduleExport(conf hackertracker.Conference, data hackertracker.Sourc
 	}
 }
 
-func buildScheduleExportSession(confCode, conferenceTimezone string, session SessionModel, content ContentModel, st *stores, sourceIndexes scheduleExportSourceIndexes) export.ScheduleExportSession {
-	timezone := exportTimezone(session.TimezoneName, conferenceTimezone)
-	locationID := ""
+func buildScheduleExportSession(session SessionModel, content ContentModel, st *stores, sourceIndexes scheduleExportSourceIndexes) export.ScheduleExportSession {
 	locationName := ""
 	if session.LocationID != nil {
 		if location, ok := st.locationsByID[*session.LocationID]; ok {
-			locationID = idKey(location.ID)
 			locationName = cleanText(location.Name)
 		}
 	}
@@ -75,62 +62,25 @@ func buildScheduleExportSession(confCode, conferenceTimezone string, session Ses
 	speakers := scheduleExportSpeakers(session.PersonIDs, st, sourceIndexes)
 	organizations := scheduleExportOrganizations(session, speakers, st, sourceIndexes)
 	tags := scheduleExportTags(session.TagIDs, st)
-	relatedIDs := content.RelatedContentIDs
-	if ids, ok := sourceIndexes.relatedContentByID[content.ID]; ok {
-		relatedIDs = ids
-	}
-	related := scheduleExportRelatedContent(confCode, relatedIDs, st)
 
 	return export.ScheduleExportSession{
-		SessionID:      idKey(session.ID),
-		ContentID:      idKey(content.ID),
-		Title:          cleanText(firstNonEmpty(session.Title, content.Title)),
-		Description:    cleanText(content.Description),
-		Start:          exportTimestamp(session.Begin, timezone),
-		End:            exportTimestamp(session.End, timezone),
-		Timezone:       timezone,
-		LocationID:     locationID,
-		Location:       locationName,
-		Speakers:       speakers,
-		Organizations:  organizations,
-		Tags:           tags,
-		RelatedContent: related,
-		LogoURL:        normalizedAssetURL(content.LogoURL),
-		URL:            publicContentURL(confCode, content.ID),
+		SessionID:          idKey(session.ID),
+		ContentID:          idKey(content.ID),
+		Title:              cleanText(firstNonEmpty(session.Title, content.Title)),
+		DescriptionSnippet: export.TextSnippet(content.Description, export.ScheduleTextSnippetLength),
+		Start:              exportTimestamp(session.Begin),
+		End:                exportTimestamp(session.End),
+		Location:           locationName,
+		Speakers:           speakers,
+		Organizations:      organizations,
+		Tags:               tags,
 	}
 }
 
 func buildScheduleExportSourceIndexes(data hackertracker.SourceData, st *stores) scheduleExportSourceIndexes {
 	indexes := scheduleExportSourceIndexes{
-		orgIDsByName:         map[string][]int{},
 		orgIDsByOrganizerTag: map[int][]int{},
 		orgIDsByPersonID:     map[int][]int{},
-		speakerLinksByID:     map[int][]LinkModel{},
-		relatedContentByID:   map[int][]int{},
-	}
-
-	validContentIDs := map[int]bool{}
-	for _, contentID := range st.contentIDs {
-		validContentIDs[contentID] = true
-	}
-	for _, content := range data.Content {
-		contentID, ok := normalizeID(content.ID)
-		if !ok {
-			continue
-		}
-		indexes.relatedContentByID[contentID] = uniqueIDs(content.RelatedContentIDs, validContentIDs)
-	}
-
-	for _, speaker := range data.Speakers {
-		personID, ok := normalizeID(speaker.ID)
-		if !ok {
-			continue
-		}
-		links := linksToModels(speaker.Links)
-		if strings.TrimSpace(speaker.Link) != "" {
-			links = append(links, LinkModel{URL: speaker.Link})
-		}
-		indexes.speakerLinksByID[personID] = links
 	}
 
 	for _, org := range data.Organizations {
@@ -140,9 +90,6 @@ func buildScheduleExportSourceIndexes(data hackertracker.SourceData, st *stores)
 		}
 		if _, ok := st.organizationsByID[orgID]; !ok {
 			continue
-		}
-		if nameKey := organizationNameKey(org.Name); nameKey != "" {
-			indexes.orgIDsByName[nameKey] = append(indexes.orgIDsByName[nameKey], orgID)
 		}
 		if org.TagIDAsOrganizer != nil {
 			if tagID, ok := normalizeID(*org.TagIDAsOrganizer); ok {
@@ -167,9 +114,6 @@ func sortScheduleExportSourceIndexes(indexes scheduleExportSourceIndexes, st *st
 				cmp.Compare(left.ID, right.ID),
 			)
 		})
-	}
-	for _, ids := range indexes.orgIDsByName {
-		sortOrgIDs(ids)
 	}
 	for _, ids := range indexes.orgIDsByOrganizerTag {
 		sortOrgIDs(ids)
@@ -208,18 +152,10 @@ func scheduleExportSpeakers(personIDs []int, st *stores, sourceIndexes scheduleE
 			continue
 		}
 		seen[personID] = true
-		links := person.Links
-		if sourceLinks, ok := sourceIndexes.speakerLinksByID[personID]; ok {
-			links = sourceLinks
-		}
 		speakers = append(speakers, export.ScheduleExportSpeaker{
-			PersonID:      idKey(person.ID),
-			Name:          cleanText(person.Name),
-			Title:         cleanText(person.Title),
-			Bio:           cleanText(person.Description),
-			Pronouns:      cleanText(person.Pronouns),
-			Organizations: cleanStringList(person.Affiliations),
-			Links:         scheduleExportLinks(links),
+			PersonID:   idKey(person.ID),
+			Name:       cleanText(person.Name),
+			BioSnippet: export.TextSnippet(person.Description, export.ScheduleTextSnippetLength),
 		})
 	}
 	return speakers
@@ -235,9 +171,6 @@ func scheduleExportOrganizations(session SessionModel, speakers []export.Schedul
 		if err == nil {
 			orgIDs = append(orgIDs, sourceIndexes.orgIDsByPersonID[personID]...)
 		}
-		for _, name := range speaker.Organizations {
-			orgIDs = append(orgIDs, sourceIndexes.orgIDsByName[organizationNameKey(name)]...)
-		}
 	}
 
 	seen := map[int]bool{}
@@ -251,14 +184,10 @@ func scheduleExportOrganizations(session SessionModel, speakers []export.Schedul
 			continue
 		}
 		seen[orgID] = true
-		links := scheduleExportLinks(org.Links)
 		orgs = append(orgs, export.ScheduleExportOrganization{
-			OrganizationID: idKey(org.ID),
-			Name:           cleanText(org.Name),
-			Description:    cleanText(org.Description),
-			URL:            firstLinkURL(links),
-			LogoURL:        normalizedAssetURL(org.LogoURL),
-			Links:          links,
+			OrganizationID:     idKey(org.ID),
+			Name:               cleanText(org.Name),
+			DescriptionSnippet: export.TextSnippet(org.Description, export.ScheduleTextSnippetLength),
 		})
 	}
 	slices.SortFunc(orgs, func(a, b export.ScheduleExportOrganization) int {
@@ -286,75 +215,12 @@ func scheduleExportTags(tagIDs []int, st *stores) []export.ScheduleExportTag {
 	return out
 }
 
-func scheduleExportRelatedContent(confCode string, contentIDs []int, st *stores) []export.ScheduleExportRelatedContent {
-	seen := map[int]bool{}
-	related := []export.ScheduleExportRelatedContent{}
-	for _, contentID := range contentIDs {
-		if seen[contentID] {
-			continue
-		}
-		content, ok := st.contentByID[contentID]
-		if !ok {
-			continue
-		}
-		seen[contentID] = true
-		related = append(related, export.ScheduleExportRelatedContent{
-			ContentID: idKey(content.ID),
-			Title:     cleanText(content.Title),
-			URL:       publicContentURL(confCode, content.ID),
-		})
-	}
-	return related
-}
-
-func scheduleExportLinks(links []LinkModel) []export.ScheduleExportLink {
-	seen := map[string]bool{}
-	out := []export.ScheduleExportLink{}
-	for _, link := range links {
-		linkURL := cleanPublicURL(link.URL)
-		if linkURL == "" || seen[linkURL] {
-			continue
-		}
-		seen[linkURL] = true
-		out = append(out, export.ScheduleExportLink{
-			Label: cleanText(firstNonEmpty(link.Label, link.Type)),
-			URL:   linkURL,
-		})
-	}
-	return out
-}
-
-func firstLinkURL(links []export.ScheduleExportLink) string {
-	for _, link := range links {
-		if link.URL != "" {
-			return link.URL
-		}
-	}
-	return ""
-}
-
-func exportTimezone(sessionTimezone, conferenceTimezone string) string {
-	for _, candidate := range []string{sessionTimezone, conferenceTimezone} {
-		candidate = strings.TrimSpace(candidate)
-		if candidate == "" {
-			continue
-		}
-		if _, err := time.LoadLocation(candidate); err == nil {
-			return candidate
-		}
-	}
-	return conferenceTimezone
-}
-
-func exportTimestamp(value, timezone string) string {
+func exportTimestamp(value string) string {
 	t, ok := parseTime(value)
 	if !ok {
 		return ""
 	}
-	if loc, err := time.LoadLocation(timezone); err == nil {
-		t = t.In(loc)
-	}
-	return t.Format(time.RFC3339)
+	return t.UTC().Format(time.RFC3339)
 }
 
 func compareExportTime(a, b string) int {
@@ -381,22 +247,6 @@ func compareExportID(a, b string) int {
 	return strings.Compare(a, b)
 }
 
-func publicConferenceURL(confCode string) string {
-	return fmt.Sprintf("https://info.defcon.org/%s/", strings.ToLower(strings.TrimSpace(confCode)))
-}
-
-func publicContentURL(confCode string, contentID int) string {
-	u := url.URL{
-		Scheme: "https",
-		Host:   "info.defcon.org",
-		Path:   "/" + strings.ToLower(strings.TrimSpace(confCode)) + "/content/",
-	}
-	query := url.Values{}
-	query.Set("id", idKey(contentID))
-	u.RawQuery = query.Encode()
-	return u.String()
-}
-
 func cleanText(value string) string {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\r", "\n")
@@ -415,25 +265,4 @@ func cleanStringList(values []string) []string {
 		out = append(out, value)
 	}
 	return out
-}
-
-func cleanPublicURL(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return ""
-	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return ""
-	}
-	switch parsed.Scheme {
-	case "http", "https":
-		return trimmed
-	default:
-		return ""
-	}
-}
-
-func organizationNameKey(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
 }

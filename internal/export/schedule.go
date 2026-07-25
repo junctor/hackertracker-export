@@ -15,96 +15,55 @@ type ScheduleExport struct {
 }
 
 type ScheduleExportConference struct {
-	Code        string `json:"code"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Timezone    string `json:"timezone"`
-	URL         string `json:"url"`
+	Name               string `json:"name"`
+	DescriptionSnippet string `json:"descriptionSnippet,omitempty"`
 }
 
 type ScheduleExportSession struct {
-	SessionID      string                         `json:"sessionId"`
-	ContentID      string                         `json:"contentId"`
-	Title          string                         `json:"title"`
-	Description    string                         `json:"description,omitempty"`
-	ContentType    string                         `json:"contentType,omitempty"`
-	Start          string                         `json:"start"`
-	End            string                         `json:"end"`
-	Timezone       string                         `json:"timezone"`
-	LocationID     string                         `json:"locationId,omitempty"`
-	Location       string                         `json:"location,omitempty"`
-	Speakers       []ScheduleExportSpeaker        `json:"speakers"`
-	Organizations  []ScheduleExportOrganization   `json:"organizations"`
-	Tags           []ScheduleExportTag            `json:"tags"`
-	RelatedContent []ScheduleExportRelatedContent `json:"relatedContent"`
-	LogoURL        string                         `json:"logoUrl,omitempty"`
-	URL            string                         `json:"url"`
+	SessionID          string                       `json:"sessionId"`
+	ContentID          string                       `json:"contentId"`
+	Title              string                       `json:"title"`
+	DescriptionSnippet string                       `json:"descriptionSnippet,omitempty"`
+	Start              string                       `json:"start"`
+	End                string                       `json:"end"`
+	Location           string                       `json:"location,omitempty"`
+	Speakers           []ScheduleExportSpeaker      `json:"speakers"`
+	Organizations      []ScheduleExportOrganization `json:"organizations"`
+	Tags               []ScheduleExportTag          `json:"tags"`
 }
 
 type ScheduleExportSpeaker struct {
-	PersonID      string               `json:"personId"`
-	Name          string               `json:"name"`
-	Title         string               `json:"title,omitempty"`
-	Bio           string               `json:"bio,omitempty"`
-	Pronouns      string               `json:"pronouns,omitempty"`
-	Organizations []string             `json:"organizations"`
-	Links         []ScheduleExportLink `json:"links"`
+	PersonID   string `json:"-"`
+	Name       string `json:"name"`
+	BioSnippet string `json:"bioSnippet,omitempty"`
 }
 
 type ScheduleExportOrganization struct {
-	OrganizationID string               `json:"organizationId"`
-	Name           string               `json:"name"`
-	Description    string               `json:"description,omitempty"`
-	URL            string               `json:"url,omitempty"`
-	LogoURL        string               `json:"logoUrl,omitempty"`
-	Links          []ScheduleExportLink `json:"links"`
+	OrganizationID     string `json:"-"`
+	Name               string `json:"name"`
+	DescriptionSnippet string `json:"descriptionSnippet,omitempty"`
 }
 
 type ScheduleExportTag struct {
-	TagID string `json:"tagId"`
+	TagID string `json:"-"`
 	Name  string `json:"name"`
 }
 
-type ScheduleExportRelatedContent struct {
-	ContentID string `json:"contentId"`
-	Title     string `json:"title"`
-	URL       string `json:"url"`
-}
-
-type ScheduleExportLink struct {
-	Label string `json:"label,omitempty"`
-	URL   string `json:"url"`
-}
-
 var scheduleCSVHeader = []string{
-	"conference_code",
 	"conference_name",
-	"conference_timezone",
 	"session_id",
 	"content_id",
 	"title",
-	"description",
-	"content_type",
+	"description_snippet",
 	"start",
 	"end",
-	"timezone",
-	"location_id",
 	"location",
-	"speaker_ids",
 	"speaker_names",
-	"speaker_titles",
-	"speaker_organizations",
-	"speaker_bios",
-	"organization_ids",
-	"organization_names",
-	"tag_ids",
+	"organizations",
 	"tags",
-	"related_content_ids",
-	"related_content_titles",
-	"related_content_urls",
-	"logo_url",
-	"url",
 }
+
+const ScheduleTextSnippetLength = 1200
 
 func writeScheduleCSV(path string, schedule ScheduleExport) (err error) {
 	dir := filepath.Dir(path)
@@ -141,35 +100,17 @@ func writeScheduleCSV(path string, schedule ScheduleExport) (err error) {
 
 func scheduleCSVRow(conf ScheduleExportConference, session ScheduleExportSession) []string {
 	return []string{
-		conf.Code,
-		conf.Name,
-		conf.Timezone,
-		session.SessionID,
-		session.ContentID,
-		session.Title,
-		session.Description,
-		session.ContentType,
-		session.Start,
-		session.End,
-		session.Timezone,
-		session.LocationID,
-		session.Location,
-		joinStrings(speakerValues(session.Speakers, func(speaker ScheduleExportSpeaker) string { return speaker.PersonID })),
+		csvCell(conf.Name),
+		csvCell(session.SessionID),
+		csvCell(session.ContentID),
+		csvCell(session.Title),
+		TextSnippet(session.DescriptionSnippet, ScheduleTextSnippetLength),
+		csvCell(session.Start),
+		csvCell(session.End),
+		csvCell(session.Location),
 		joinStrings(speakerValues(session.Speakers, func(speaker ScheduleExportSpeaker) string { return speaker.Name })),
-		joinStrings(speakerValues(session.Speakers, func(speaker ScheduleExportSpeaker) string { return speaker.Title })),
-		joinStrings(speakerValues(session.Speakers, func(speaker ScheduleExportSpeaker) string {
-			return strings.Join(speaker.Organizations, ", ")
-		})),
-		joinStrings(speakerValues(session.Speakers, func(speaker ScheduleExportSpeaker) string { return speaker.Bio })),
-		joinStrings(organizationValues(session.Organizations, func(org ScheduleExportOrganization) string { return org.OrganizationID })),
 		joinStrings(organizationValues(session.Organizations, func(org ScheduleExportOrganization) string { return org.Name })),
-		joinStrings(tagValues(session.Tags, func(tag ScheduleExportTag) string { return tag.TagID })),
 		joinStrings(tagValues(session.Tags, func(tag ScheduleExportTag) string { return tag.Name })),
-		joinStrings(relatedContentValues(session.RelatedContent, func(content ScheduleExportRelatedContent) string { return content.ContentID })),
-		joinStrings(relatedContentValues(session.RelatedContent, func(content ScheduleExportRelatedContent) string { return content.Title })),
-		joinStrings(relatedContentValues(session.RelatedContent, func(content ScheduleExportRelatedContent) string { return content.URL })),
-		session.LogoURL,
-		session.URL,
 	}
 }
 
@@ -197,14 +138,39 @@ func tagValues(tags []ScheduleExportTag, value func(ScheduleExportTag) string) [
 	return out
 }
 
-func relatedContentValues(contents []ScheduleExportRelatedContent, value func(ScheduleExportRelatedContent) string) []string {
-	out := make([]string, 0, len(contents))
-	for _, content := range contents {
-		out = append(out, value(content))
+func joinStrings(values []string) string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, csvCell(value))
 	}
-	return out
+	return strings.Join(out, ";")
 }
 
-func joinStrings(values []string) string {
-	return strings.Join(values, ";")
+func TextSnippet(value string, maxRunes int) string {
+	value = csvCell(value)
+	if maxRunes <= 0 || len([]rune(value)) <= maxRunes {
+		return value
+	}
+
+	if maxRunes <= len("...") {
+		return string([]rune(value)[:maxRunes])
+	}
+
+	limit := maxRunes - len("...")
+	runes := []rune(value)
+	cut := limit
+	for i := limit; i > 0; i-- {
+		if runes[i-1] == ' ' {
+			cut = i - 1
+			break
+		}
+	}
+	if cut == 0 {
+		cut = limit
+	}
+	return strings.TrimSpace(string(runes[:cut])) + "..."
+}
+
+func csvCell(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
