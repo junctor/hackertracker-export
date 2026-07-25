@@ -14,6 +14,7 @@ import (
 type Artifacts struct {
 	Manifest   any
 	Conference any
+	Schedule   ScheduleExport
 	Entities   map[string]any
 	Indexes    map[string]any
 	Views      map[string]any
@@ -26,7 +27,7 @@ type detailLookup struct {
 	values map[int]any
 }
 
-var generatedDirs = [...]string{"views", "details", "derived"}
+var generatedDirs = [...]string{"views", "details", "derived", "exports"}
 
 var prunedDirs = [...]string{"raw", "entities", "indexes"}
 
@@ -120,6 +121,14 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	if err := write("conference.json", artifacts.Conference); err != nil {
 		return nil, err
 	}
+	if err := write(filepath.Join("exports", "schedule.json"), artifacts.Schedule); err != nil {
+		return nil, err
+	}
+	scheduleCSVPath := filepath.Join(outDir, "exports", "schedule.csv")
+	if err := writeScheduleCSV(scheduleCSVPath, artifacts.Schedule); err != nil {
+		return nil, fmt.Errorf("write exports/schedule.csv: %w", err)
+	}
+	written = append(written, scheduleCSVPath)
 	for _, name := range []string{
 		"announcementsList",
 		"bookmarkSessionsById",

@@ -172,6 +172,7 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export
 			"timezone":       conf.Timezone,
 		},
 		Conference: conf,
+		Schedule:   buildScheduleExport(conf, data, st),
 		Entities:   entities(st),
 		Indexes: map[string]any{
 			"sessionsByDay": indexes.sessionsByDay,
