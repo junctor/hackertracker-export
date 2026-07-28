@@ -18,10 +18,6 @@ type scheduleExportSourceIndexes struct {
 
 func buildScheduleExport(conf hackertracker.Conference, data hackertracker.SourceData, st *stores) export.ScheduleExport {
 	sourceIndexes := buildScheduleExportSourceIndexes(data, st)
-	conference := export.ScheduleExportConference{
-		Name:               cleanText(conf.Name),
-		DescriptionSnippet: export.TextSnippet(conf.Description, export.ScheduleTextSnippetLength),
-	}
 
 	sessions := make([]export.ScheduleExportSession, 0, len(st.sessionIDs))
 	for _, sessionID := range st.sessionIDs {
@@ -45,9 +41,18 @@ func buildScheduleExport(conf hackertracker.Conference, data hackertracker.Sourc
 	})
 
 	return export.ScheduleExport{
-		SchemaVersion: 1,
-		Conference:    conference,
-		Sessions:      sessions,
+		SchemaVersion: 2,
+		Metadata: export.ScheduleExportMetadata{
+			ConferenceCode:           cleanText(conf.Code),
+			ConferenceName:           cleanText(conf.Name),
+			ConferenceTimezone:       cleanText(conf.Timezone),
+			DescriptionSnippet:       export.TextSnippet(conf.Description, export.ScheduleTextSnippetLength),
+			SessionCount:             len(sessions),
+			TimeZoneForTimestamps:    "UTC",
+			TimeFormat:               "RFC3339",
+			TextSnippetMaxCharacters: export.ScheduleTextSnippetLength,
+		},
+		Sessions: sessions,
 	}
 }
 
@@ -248,9 +253,7 @@ func compareExportID(a, b string) int {
 }
 
 func cleanText(value string) string {
-	value = strings.ReplaceAll(value, "\r\n", "\n")
-	value = strings.ReplaceAll(value, "\r", "\n")
-	return strings.TrimSpace(value)
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func cleanStringList(values []string) []string {
