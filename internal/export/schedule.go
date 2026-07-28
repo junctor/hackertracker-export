@@ -58,14 +58,14 @@ type ScheduleExportTag struct {
 var scheduleCSVHeader = []string{
 	"session_id",
 	"content_id",
-	"title",
-	"description_snippet",
 	"start_utc",
 	"end_utc",
 	"location_name",
+	"title",
 	"speaker_names",
 	"organization_names",
 	"tag_names",
+	"description_snippet",
 }
 
 const ScheduleTextSnippetLength = 1200
@@ -107,14 +107,14 @@ func scheduleCSVRow(session ScheduleExportSession) []string {
 	return []string{
 		csvCell(session.SessionID),
 		csvCell(session.ContentID),
-		csvCell(session.Title),
-		TextSnippet(session.DescriptionSnippet, ScheduleTextSnippetLength),
 		csvCell(session.Start),
 		csvCell(session.End),
 		csvCell(session.Location),
+		csvCell(session.Title),
 		joinStrings(speakerValues(session.Speakers, func(speaker ScheduleExportSpeaker) string { return speaker.Name })),
 		joinStrings(organizationValues(session.Organizations, func(org ScheduleExportOrganization) string { return org.Name })),
 		joinStrings(tagValues(session.Tags, func(tag ScheduleExportTag) string { return tag.Name })),
+		TextSnippet(session.DescriptionSnippet, ScheduleTextSnippetLength),
 	}
 }
 
