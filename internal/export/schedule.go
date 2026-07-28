@@ -9,14 +9,20 @@ import (
 )
 
 type ScheduleExport struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Conference    ScheduleExportConference `json:"conference"`
-	Sessions      []ScheduleExportSession  `json:"sessions"`
+	SchemaVersion int                     `json:"schemaVersion"`
+	Metadata      ScheduleExportMetadata  `json:"metadata"`
+	Sessions      []ScheduleExportSession `json:"sessions"`
 }
 
-type ScheduleExportConference struct {
-	Name               string `json:"name"`
-	DescriptionSnippet string `json:"descriptionSnippet,omitempty"`
+type ScheduleExportMetadata struct {
+	ConferenceCode           string `json:"conferenceCode,omitempty"`
+	ConferenceName           string `json:"conferenceName,omitempty"`
+	ConferenceTimezone       string `json:"conferenceTimezone,omitempty"`
+	DescriptionSnippet       string `json:"descriptionSnippet,omitempty"`
+	SessionCount             int    `json:"sessionCount"`
+	TimeZoneForTimestamps    string `json:"timeZoneForTimestamps"`
+	TimeFormat               string `json:"timeFormat"`
+	TextSnippetMaxCharacters int    `json:"textSnippetMaxCharacters"`
 }
 
 type ScheduleExportSession struct {
@@ -50,17 +56,16 @@ type ScheduleExportTag struct {
 }
 
 var scheduleCSVHeader = []string{
-	"conference_name",
 	"session_id",
 	"content_id",
 	"title",
 	"description_snippet",
-	"start",
-	"end",
-	"location",
+	"start_utc",
+	"end_utc",
+	"location_name",
 	"speaker_names",
-	"organizations",
-	"tags",
+	"organization_names",
+	"tag_names",
 }
 
 const ScheduleTextSnippetLength = 1200
@@ -87,7 +92,7 @@ func writeScheduleCSV(path string, schedule ScheduleExport) (err error) {
 		return fmt.Errorf("write CSV header %q: %w", path, err)
 	}
 	for _, session := range schedule.Sessions {
-		if err := writer.Write(scheduleCSVRow(schedule.Conference, session)); err != nil {
+		if err := writer.Write(scheduleCSVRow(session)); err != nil {
 			return fmt.Errorf("write CSV row %q: %w", path, err)
 		}
 	}
@@ -98,9 +103,8 @@ func writeScheduleCSV(path string, schedule ScheduleExport) (err error) {
 	return nil
 }
 
-func scheduleCSVRow(conf ScheduleExportConference, session ScheduleExportSession) []string {
+func scheduleCSVRow(session ScheduleExportSession) []string {
 	return []string{
-		csvCell(conf.Name),
 		csvCell(session.SessionID),
 		csvCell(session.ContentID),
 		csvCell(session.Title),
