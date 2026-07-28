@@ -177,11 +177,16 @@ Both files contain one record or row per scheduled session occurrence. Content
 with multiple sessions appears once for each occurrence, and content without a
 scheduled session is not included. Organizations, tags, locations, and people
 are resolved during generation, so consumers do not need to download or join
-against files under `details/`.
+against files under `details/`. Schedule exports are scoped to the conference
+page or conference directory they are downloaded from, so they do not repeat the
+conference name in each session record or CSV row.
 
-`exports/schedule.json` uses `schemaVersion: 1` and is the rich,
+`exports/schedule.json` uses `schemaVersion: 2` and is the rich,
 self-contained format for LLMs, agents, applications, search and retrieval,
-integrations, and archival use. Important fields include conference metadata,
+integrations, and archival use. The top-level object contains compact
+`metadata` followed by the `sessions` array. Metadata includes conference code,
+conference name, conference timezone, session count, timestamp timezone and
+format, and the maximum text snippet length. Session fields include
 `sessionId`, `contentId`, `title`, `descriptionSnippet`, RFC 3339 `start` and
 `end` timestamps in UTC, location name, nested `speakers`, nested
 `organizations`, and `tags`. Long text fields are whitespace-normalized and
@@ -189,27 +194,27 @@ capped at 1200 characters, including the trailing `...` marker when truncated.
 
 `exports/schedule.csv` is the flat dataframe-oriented format for Polars,
 Pandas, R, the Tidyverse, DuckDB, spreadsheet applications, and similar tools.
-Multi-value CSV fields use `;`. The CSV intentionally avoids sparse speaker
-affiliation/title columns, full free-text biographies,
-descriptions, URLs, presentation asset fields, and related-content pointers;
-JSON remains the richer representation for LLMs and nested speaker,
-organization, and tag data.
+Column names are unique lower-case `snake_case`, one scheduled session
+occurrence appears per row, UTC timestamp columns are explicitly suffixed with
+`_utc`, and multi-value CSV fields use `;`. The CSV intentionally avoids sparse
+speaker affiliation/title columns, full free-text biographies, descriptions,
+URLs, presentation asset fields, and related-content pointers; JSON remains the
+richer representation for LLMs and nested speaker, organization, and tag data.
 
 CSV columns:
 
 | Column | Description |
 | --- | --- |
-| `conference_name` | Conference display name. |
 | `session_id` | Scheduled occurrence ID. |
 | `content_id` | Parent content ID. |
 | `title` | Resolved session title. |
 | `description_snippet` | Whitespace-normalized public description preview, capped at 1200 characters including `...` when truncated. |
-| `start` | UTC RFC 3339 start timestamp. |
-| `end` | UTC RFC 3339 end timestamp. |
-| `location` | Resolved location name. |
+| `start_utc` | UTC RFC 3339 start timestamp. |
+| `end_utc` | UTC RFC 3339 end timestamp. |
+| `location_name` | Resolved location name. |
 | `speaker_names` | `;`-delimited speaker names. |
-| `organizations` | `;`-delimited associated event or community organization names. |
-| `tags` | `;`-delimited tag names. |
+| `organization_names` | `;`-delimited associated event or community organization names. |
+| `tag_names` | `;`-delimited tag names. |
 
 `views/scheduleDays.json` remains an application view model for the website UI.
 It is not the stable public export contract.
