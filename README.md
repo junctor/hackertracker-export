@@ -207,14 +207,14 @@ CSV columns:
 | --- | --- |
 | `session_id` | Scheduled occurrence ID. |
 | `content_id` | Parent content ID. |
-| `title` | Resolved session title. |
-| `description_snippet` | Whitespace-normalized public description preview, capped at 1200 characters including `...` when truncated. |
 | `start_utc` | UTC RFC 3339 start timestamp. |
 | `end_utc` | UTC RFC 3339 end timestamp. |
 | `location_name` | Resolved location name. |
+| `title` | Resolved session title. |
 | `speaker_names` | `;`-delimited speaker names. |
 | `organization_names` | `;`-delimited associated event or community organization names. |
 | `tag_names` | `;`-delimited tag names. |
+| `description_snippet` | Whitespace-normalized public description preview, capped at 1200 characters including `...` when truncated. |
 
 `views/scheduleDays.json` remains an application view model for the website UI.
 It is not the stable public export contract.
