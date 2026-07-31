@@ -69,10 +69,12 @@ type ContentCard struct {
 }
 
 type SearchItem struct {
-	ID   int    `json:"id"`
-	Norm string `json:"norm"`
-	Text string `json:"text"`
-	Type string `json:"type"`
+	ContentCount int    `json:"contentCount,omitempty"`
+	ContentIDs   []int  `json:"contentIds,omitempty"`
+	ID           int    `json:"id"`
+	Norm         string `json:"norm"`
+	Text         string `json:"text"`
+	Type         string `json:"type"`
 }
 
 type TagIDsByLabel struct {
@@ -280,6 +282,7 @@ func buildContentCards(st *stores) []ContentCard {
 
 func createSearchData(st *stores) []SearchItem {
 	items := []SearchItem{}
+	contentIDsByTag := searchContentIDsByTag(st)
 	for _, personID := range st.peopleIDs {
 		person := st.peopleByID[personID]
 		items = append(items, SearchItem{ID: person.ID, Norm: normalizeForSearch(person.Name), Text: person.Name, Type: "person"})
@@ -292,10 +295,47 @@ func createSearchData(st *stores) []SearchItem {
 		org := st.organizationsByID[orgID]
 		items = append(items, SearchItem{ID: org.ID, Norm: normalizeForSearch(org.Name), Text: org.Name, Type: "organization"})
 	}
+	for _, tagID := range st.tagIDs {
+		contentIDs := contentIDsByTag[tagID]
+		if len(contentIDs) == 0 {
+			continue
+		}
+		tag := st.tagsByID[tagID]
+		items = append(items, SearchItem{
+			ContentCount: len(contentIDs),
+			ContentIDs:   contentIDs,
+			ID:           tag.ID,
+			Norm:         normalizeForSearch(tag.Label),
+			Text:         tag.Label,
+			Type:         "tag",
+		})
+	}
 	slices.SortStableFunc(items, func(left, right SearchItem) int {
-		return alphaCompare(left.Text, right.Text)
+		return cmp.Or(
+			alphaCompare(left.Text, right.Text),
+			cmp.Compare(left.ID, right.ID),
+			alphaCompare(left.Type, right.Type),
+		)
 	})
 	return items
+}
+
+func searchContentIDsByTag(st *stores) map[int][]int {
+	contentIDsByTag := map[int][]int{}
+	for _, contentID := range st.contentIDs {
+		content := st.contentByID[contentID]
+		for _, tagID := range content.TagIDs {
+			if _, ok := st.tagsByID[tagID]; !ok {
+				continue
+			}
+			contentIDsByTag[tagID] = append(contentIDsByTag[tagID], content.ID)
+		}
+	}
+	for tagID, contentIDs := range contentIDsByTag {
+		slices.Sort(contentIDs)
+		contentIDsByTag[tagID] = slices.Compact(contentIDs)
+	}
+	return contentIDsByTag
 }
 
 func buildTagIDsByLabel(data hackertracker.SourceData) TagIDsByLabel {

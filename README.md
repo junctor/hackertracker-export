@@ -166,6 +166,16 @@ shape applies to documents, organizations, people, and tags.
 Each `info` run recreates the generated subdirectories so stale JSON and CSV
 files are removed.
 
+`views/searchData.json` is the compact runtime search index for
+`info.defcon.org`. It includes direct records for content titles, people names,
+organization names, and content tags. Tag records use stable numeric tag IDs and
+include `contentIds` plus `contentCount` so the web app can show matching tags
+as first-class results and link to all associated content without duplicating
+large tag objects inside every content record. Search text is normalized with
+the same case-insensitive, accent-folding, punctuation-to-space behavior used by
+the web client. Manifest `schemaVersion: 3` is the first version with tag-aware
+search data.
+
 ## Public Schedule Exports
 
 The `exports/` directory contains exactly two stable public schedule exports:

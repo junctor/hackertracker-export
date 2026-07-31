@@ -168,7 +168,7 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export
 			"buildTimestamp": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 			"code":           conf.Code,
 			"name":           conf.Name,
-			"schemaVersion":  2,
+			"schemaVersion":  3,
 			"timezone":       conf.Timezone,
 		},
 		Conference: conf,
