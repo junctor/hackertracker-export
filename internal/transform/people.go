@@ -2,21 +2,82 @@ package transform
 
 import "slices"
 
+type ContentDetailContent struct {
+	Color       string      `json:"color,omitempty"`
+	Description string      `json:"description,omitempty"`
+	ID          int         `json:"id"`
+	Links       []LinkModel `json:"links,omitempty"`
+	LogoURL     string      `json:"logoUrl,omitempty"`
+	Title       string      `json:"title"`
+}
+
+type DetailPersonSummary struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type DetailSession struct {
+	Begin        string `json:"begin"`
+	Color        string `json:"color,omitempty"`
+	ContentID    int    `json:"contentId"`
+	End          string `json:"end"`
+	ID           int    `json:"id"`
+	LocationName string `json:"locationName,omitempty"`
+	Title        string `json:"title"`
+}
+
+type PersonDetailPerson struct {
+	Affiliations []string    `json:"affiliations,omitempty"`
+	AvatarURL    string      `json:"avatarUrl,omitempty"`
+	Description  string      `json:"description,omitempty"`
+	ID           int         `json:"id"`
+	Links        []LinkModel `json:"links,omitempty"`
+	Name         string      `json:"name"`
+	Pronouns     string      `json:"pronouns,omitempty"`
+}
+
 type ContentDetail struct {
-	Content   ContentModel    `json:"content"`
-	Locations []LocationModel `json:"locations"`
-	People    []PersonModel   `json:"people"`
-	Sessions  []SessionModel  `json:"sessions"`
-	Tags      []TagModel      `json:"tags"`
+	AccentColor    string                `json:"accentColor,omitempty"`
+	Content        ContentDetailContent  `json:"content"`
+	People         []DetailPersonSummary `json:"people"`
+	RelatedContent []ContentCard         `json:"relatedContent"`
+	Sessions       []DetailSession       `json:"sessions"`
+	Tags           []CompactTag          `json:"tags"`
 }
 
 type PersonDetail struct {
-	Locations []LocationModel `json:"locations"`
-	Person    PersonModel     `json:"person"`
-	Sessions  []SessionModel  `json:"sessions"`
+	Person   PersonDetailPerson `json:"person"`
+	Sessions []DetailSession    `json:"sessions"`
 }
 
 func buildContentDetail(content ContentModel, st *stores, allSessions []SessionModel) ContentDetail {
+	sessions := sessionsForContent(content, allSessions, st)
+	people := peopleForContent(content, sessions, st)
+	tags := tagsForIDs(content.TagIDs, st.tagsByID)
+	slices.SortFunc(tags, compareTags)
+	compactTags := make([]CompactTag, 0, len(tags))
+	for _, tag := range tags {
+		compactTags = append(compactTags, compactTag(tag))
+	}
+
+	return ContentDetail{
+		AccentColor: contentDetailAccentColor(content, sessions, st),
+		Content: ContentDetailContent{
+			Color:       content.Color,
+			Description: content.Description,
+			ID:          content.ID,
+			Links:       content.Links,
+			LogoURL:     content.LogoURL,
+			Title:       content.Title,
+		},
+		People:         people,
+		RelatedContent: relatedContentCards(content, st),
+		Sessions:       detailSessions(sessions, st),
+		Tags:           compactTags,
+	}
+}
+
+func sessionsForContent(content ContentModel, allSessions []SessionModel, st *stores) []SessionModel {
 	sessions := []SessionModel{}
 	if len(content.Sessions) > 0 {
 		for _, sessionID := range content.Sessions {
@@ -32,38 +93,89 @@ func buildContentDetail(content ContentModel, st *stores, allSessions []SessionM
 		}
 	}
 	sortSessions(sessions)
+	return sessions
+}
 
-	people := []PersonModel{}
+func peopleForContent(content ContentModel, sessions []SessionModel, st *stores) []DetailPersonSummary {
+	people := []DetailPersonSummary{}
+	appendPerson := func(personID int) {
+		if person, ok := st.peopleByID[personID]; ok {
+			people = append(people, DetailPersonSummary{ID: person.ID, Name: person.Name})
+		}
+	}
 	if len(content.People) > 0 {
-		peopleEntries := slices.Clone(content.People)
-		slices.SortFunc(peopleEntries, compareContentPeople)
-		for _, entry := range peopleEntries {
-			if person, ok := st.peopleByID[entry.PersonID]; ok {
-				people = append(people, person)
-			}
+		entries := slices.Clone(content.People)
+		slices.SortFunc(entries, compareContentPeople)
+		for _, entry := range entries {
+			appendPerson(entry.PersonID)
 		}
-	} else {
-		seen := map[int]bool{}
-		for _, session := range sessions {
-			for _, personID := range session.PersonIDs {
-				if seen[personID] {
-					continue
-				}
-				if person, ok := st.peopleByID[personID]; ok {
-					seen[personID] = true
-					people = append(people, person)
-				}
-			}
-		}
+		return people
 	}
 
-	return ContentDetail{
-		Content:   content,
-		Locations: uniqueLocationsForSessions(sessions, st),
-		People:    people,
-		Sessions:  sessions,
-		Tags:      tagsForIDs(content.TagIDs, st.tagsByID),
+	seen := map[int]bool{}
+	for _, session := range sessions {
+		for _, personID := range session.PersonIDs {
+			if seen[personID] {
+				continue
+			}
+			seen[personID] = true
+			appendPerson(personID)
+		}
 	}
+	return people
+}
+
+func contentDetailAccentColor(content ContentModel, sessions []SessionModel, st *stores) string {
+	if content.Color != "" {
+		return content.Color
+	}
+	if len(sessions) == 0 {
+		return ""
+	}
+	if sessions[0].Color != "" {
+		return sessions[0].Color
+	}
+	if len(sessions[0].TagIDs) > 0 {
+		return st.tagsByID[sessions[0].TagIDs[0]].ColorBackground
+	}
+	return ""
+}
+
+func detailSessions(sessions []SessionModel, st *stores) []DetailSession {
+	out := make([]DetailSession, 0, len(sessions))
+	for _, session := range sessions {
+		locationName := ""
+		if session.LocationID != nil {
+			locationName = st.locationsByID[*session.LocationID].Name
+		}
+		out = append(out, DetailSession{
+			Begin:        session.Begin,
+			Color:        session.Color,
+			ContentID:    session.ContentID,
+			End:          session.End,
+			ID:           session.ID,
+			LocationName: locationName,
+			Title:        session.Title,
+		})
+	}
+	return out
+}
+
+func relatedContentCards(content ContentModel, st *stores) []ContentCard {
+	seen := map[int]bool{}
+	cards := []ContentCard{}
+	for _, relatedID := range content.RelatedContentIDs {
+		if relatedID == content.ID || seen[relatedID] {
+			continue
+		}
+		related, ok := st.contentByID[relatedID]
+		if !ok {
+			continue
+		}
+		seen[relatedID] = true
+		cards = append(cards, buildContentCard(related, st))
+	}
+	return cards
 }
 
 func buildPersonDetail(person PersonModel, st *stores, allSessions []SessionModel) PersonDetail {
@@ -103,25 +215,17 @@ func buildPersonDetail(person PersonModel, st *stores, allSessions []SessionMode
 	sortSessions(sessions)
 
 	return PersonDetail{
-		Locations: uniqueLocationsForSessions(sessions, st),
-		Person:    person,
-		Sessions:  sessions,
+		Person: PersonDetailPerson{
+			Affiliations: person.Affiliations,
+			AvatarURL:    person.AvatarURL,
+			Description:  person.Description,
+			ID:           person.ID,
+			Links:        person.Links,
+			Name:         person.Name,
+			Pronouns:     person.Pronouns,
+		},
+		Sessions: detailSessions(sessions, st),
 	}
-}
-
-func uniqueLocationsForSessions(sessions []SessionModel, st *stores) []LocationModel {
-	seen := map[int]bool{}
-	locations := []LocationModel{}
-	for _, session := range sessions {
-		if session.LocationID == nil || seen[*session.LocationID] {
-			continue
-		}
-		if location, ok := st.locationsByID[*session.LocationID]; ok {
-			seen[*session.LocationID] = true
-			locations = append(locations, location)
-		}
-	}
-	return locations
 }
 
 func tagsForIDs(ids []int, byID map[int]TagModel) []TagModel {
@@ -134,21 +238,6 @@ func tagsForIDs(ids []int, byID map[int]TagModel) []TagModel {
 		if entity, ok := byID[id]; ok {
 			seen[id] = true
 			out = append(out, entity)
-		}
-	}
-	return out
-}
-
-func peopleForIDs(ids []int, st *stores) []PersonModel {
-	seen := map[int]bool{}
-	out := []PersonModel{}
-	for _, id := range ids {
-		if seen[id] {
-			continue
-		}
-		if person, ok := st.peopleByID[id]; ok {
-			seen[id] = true
-			out = append(out, person)
 		}
 	}
 	return out
