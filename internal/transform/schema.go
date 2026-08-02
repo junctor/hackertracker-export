@@ -189,6 +189,14 @@ func intPtrFromValue(value any) *int {
 	return &id
 }
 
+func sortOrderPtrFromValue(value any) *int {
+	sortOrder, ok := normalizeID(value)
+	if !ok || sortOrder <= 0 {
+		return nil
+	}
+	return &sortOrder
+}
+
 func idKey(id int) string {
 	return strconv.Itoa(id)
 }

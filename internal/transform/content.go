@@ -283,7 +283,7 @@ func buildEntities(data hackertracker.SourceData, timezone string) (*stores, err
 			ID:            id,
 			IsBrowsable:   tagType.IsBrowsable,
 			Label:         tagType.Label,
-			SortOrder:     intPtrFromValue(tagType.SortOrder),
+			SortOrder:     sortOrderPtrFromValue(tagType.SortOrder),
 			WellKnownUUID: tagType.WellKnownUUID,
 		})
 	}
@@ -384,7 +384,7 @@ func buildContentPeople(sourcePeople []hackertracker.ContentPerson, validPersonI
 		if _, exists := peopleByID[personID]; exists {
 			continue
 		}
-		peopleByID[personID] = ContentPersonModel{PersonID: personID, SortOrder: intPtrFromValue(person.SortOrder)}
+		peopleByID[personID] = ContentPersonModel{PersonID: personID, SortOrder: sortOrderPtrFromValue(person.SortOrder)}
 	}
 
 	people := make([]ContentPersonModel, 0, len(peopleByID))
@@ -482,20 +482,51 @@ func buildOrganizationModel(org hackertracker.Organization, tagIDs map[int]bool)
 }
 
 func buildTags(data hackertracker.SourceData) []TagModel {
-	tags := []TagModel{}
-	for _, tag := range sourceTags(data) {
-		id, ok := normalizeID(tag.ID)
+	type tagCandidate struct {
+		tag     TagModel
+		tagType TagTypeModel
+	}
+
+	candidatesByID := map[int]tagCandidate{}
+	for _, sourceTagType := range data.TagTypes {
+		tagTypeID, ok := normalizeID(sourceTagType.ID)
 		if !ok {
 			continue
 		}
-		tags = append(tags, TagModel{
-			ColorBackground: tag.ColorBackground,
-			ColorForeground: tag.ColorForeground,
-			ID:              id,
-			Label:           tag.Label,
-			SortOrder:       intPtrFromValue(tag.SortOrder),
-			TagTypeID:       tag.TagTypeID,
-		})
+		tagType := TagTypeModel{
+			Category:      stringPtrOrNil(sourceTagType.Category),
+			ID:            tagTypeID,
+			IsBrowsable:   sourceTagType.IsBrowsable,
+			Label:         sourceTagType.Label,
+			SortOrder:     sortOrderPtrFromValue(sourceTagType.SortOrder),
+			WellKnownUUID: sourceTagType.WellKnownUUID,
+		}
+		for _, sourceTag := range sourceTagType.Tags {
+			tagID, ok := normalizeID(sourceTag.ID)
+			if !ok {
+				continue
+			}
+			candidate := tagCandidate{
+				tag: TagModel{
+					ColorBackground: sourceTag.ColorBackground,
+					ColorForeground: sourceTag.ColorForeground,
+					ID:              tagID,
+					Label:           sourceTag.Label,
+					SortOrder:       sortOrderPtrFromValue(sourceTag.SortOrder),
+					TagTypeID:       tagTypeID,
+				},
+				tagType: tagType,
+			}
+			current, exists := candidatesByID[tagID]
+			if !exists || compareTagTypesForBrowse(candidate.tagType, current.tagType) < 0 {
+				candidatesByID[tagID] = candidate
+			}
+		}
+	}
+
+	tags := make([]TagModel, 0, len(candidatesByID))
+	for _, candidate := range candidatesByID {
+		tags = append(tags, candidate.tag)
 	}
 	slices.SortFunc(tags, compareTags)
 	return tags
