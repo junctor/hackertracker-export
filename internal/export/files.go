@@ -1,7 +1,6 @@
 package export
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -12,29 +11,24 @@ import (
 )
 
 type Artifacts struct {
-	Manifest   any
-	Conference any
-	Schedule   ScheduleExport
-	Entities   map[string]any
-	Indexes    map[string]any
-	Views      map[string]any
-	Derived    map[string]any
-	Details    map[string]map[int]any
+	Manifest     any
+	Conference   any
+	Schedule     ScheduleExport
+	Entities     map[string]any
+	Indexes      map[string]any
+	Views        map[string]any
+	Details      map[string]map[int]any
+	DetailShards map[string]DetailShardSpec
 }
 
-type detailLookup struct {
-	ids    []int
-	values map[int]any
+type DetailShardSpec struct {
+	Count  int
+	Digits int
 }
 
-var generatedDirs = [...]string{"views", "details", "derived", "exports"}
+var generatedDirs = [...]string{"views", "details", "exports"}
 
-var prunedDirs = [...]string{"raw", "entities", "indexes"}
-
-var unpublishedWebsiteDetailGroups = map[string]bool{
-	"locations": true,
-	"sessions":  true,
-}
+var prunedDirs = [...]string{"raw", "entities", "indexes", "derived"}
 
 func writeJSON(path string, value any) error {
 	dir := filepath.Dir(path)
@@ -50,36 +44,6 @@ func writeJSON(path string, value any) error {
 		return fmt.Errorf("write %q: %w", path, err)
 	}
 	return nil
-}
-
-func newDetailLookup(values map[int]any) detailLookup {
-	return detailLookup{
-		ids:    slices.Sorted(maps.Keys(values)),
-		values: values,
-	}
-}
-
-func (lookup detailLookup) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	for index, id := range lookup.ids {
-		if index > 0 {
-			buf.WriteByte(',')
-		}
-		key, err := json.Marshal(strconv.Itoa(id))
-		if err != nil {
-			return nil, err
-		}
-		value, err := json.Marshal(lookup.values[id])
-		if err != nil {
-			return nil, err
-		}
-		buf.Write(key)
-		buf.WriteByte(':')
-		buf.Write(value)
-	}
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
 }
 
 func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
@@ -115,9 +79,6 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 		return nil
 	}
 
-	if err := write("manifest.json", artifacts.Manifest); err != nil {
-		return nil, err
-	}
 	if err := write("conference.json", artifacts.Conference); err != nil {
 		return nil, err
 	}
@@ -131,14 +92,15 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 	written = append(written, scheduleCSVPath)
 	for _, name := range []string{
 		"announcementsList",
-		"bookmarkSessionsById",
 		"contentCards",
+		"contentFilterIndex",
 		"documentsList",
 		"locationCards",
-		"organizationsCards",
+		"organizationsBrowse",
 		"peopleCards",
 		"searchData",
-		"scheduleDays",
+		"scheduleBrowse",
+		"scheduleFilterIndex",
 		"tagTypesBrowse",
 	} {
 		value, ok := artifacts.Views[name]
@@ -149,22 +111,35 @@ func WriteArtifacts(outDir string, artifacts Artifacts) ([]string, error) {
 			return nil, err
 		}
 	}
-	tagIDsByLabel, ok := artifacts.Derived["tagIdsByLabel"]
-	if !ok {
-		return nil, fmt.Errorf("missing generated artifact: tagIdsByLabel")
-	}
-	if err := write(filepath.Join("derived", "tagIdsByLabel.json"), tagIDsByLabel); err != nil {
-		return nil, err
-	}
-
-	groups := slices.Sorted(maps.Keys(artifacts.Details))
+	groups := slices.Sorted(maps.Keys(artifacts.DetailShards))
 	for _, group := range groups {
-		if unpublishedWebsiteDetailGroups[group] {
-			continue
+		spec := artifacts.DetailShards[group]
+		if spec.Count <= 0 || spec.Digits <= 0 {
+			return nil, fmt.Errorf("invalid detail shard spec for %s", group)
 		}
-		if err := write(filepath.Join("details", group+".json"), newDetailLookup(artifacts.Details[group])); err != nil {
-			return nil, err
+		values, ok := artifacts.Details[group]
+		if !ok {
+			return nil, fmt.Errorf("missing detail values for %s", group)
 		}
+		shards := make([]map[string]any, spec.Count)
+		for index := range shards {
+			shards[index] = map[string]any{}
+		}
+		for _, id := range slices.Sorted(maps.Keys(values)) {
+			index := ((id % spec.Count) + spec.Count) % spec.Count
+			shards[index][strconv.Itoa(id)] = values[id]
+		}
+		for index, shard := range shards {
+			name := fmt.Sprintf("%0*d.json", spec.Digits, index)
+			if err := write(filepath.Join("details", group, name), shard); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// Write the cache-invalidation marker only after every referenced artifact
+	// has been generated successfully.
+	if err := write("manifest.json", artifacts.Manifest); err != nil {
+		return nil, err
 	}
 	slices.Sort(written)
 	return written, nil
