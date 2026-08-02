@@ -15,6 +15,12 @@ type OrganizationCard struct {
 	LogoURL string `json:"logoUrl,omitempty"`
 }
 
+type OrganizationsBrowse struct {
+	All           []OrganizationCard            `json:"all"`
+	ByTag         map[string][]OrganizationCard `json:"byTag"`
+	TagIDsByLabel TagIDsByLabel                 `json:"tagIdsByLabel"`
+}
+
 type organizationCardEntry struct {
 	Card   OrganizationCard
 	TagIDs []int
@@ -59,14 +65,19 @@ type CompactTag struct {
 	ColorForeground string `json:"colorForeground"`
 	ID              int    `json:"id"`
 	Label           string `json:"label"`
-	SortOrder       *int   `json:"sortOrder"`
 }
 
 type ContentCard struct {
-	ID      int          `json:"id"`
-	LogoURL string       `json:"logoUrl,omitempty"`
-	Tags    []CompactTag `json:"tags"`
-	Title   string       `json:"title"`
+	ID       int          `json:"id"`
+	LogoURL  string       `json:"logoUrl,omitempty"`
+	TagCount int          `json:"tagCount"`
+	Tags     []CompactTag `json:"tags"`
+	Title    string       `json:"title"`
+}
+
+type FilterIndex struct {
+	ItemCount    int              `json:"itemCount"`
+	ItemIDsByTag map[string][]int `json:"itemIdsByTag"`
 }
 
 type SearchItem struct {
@@ -84,18 +95,19 @@ type TagIDsByLabel struct {
 	Collisions map[string][]int `json:"collisions,omitempty"`
 }
 
-func buildViews(st *stores) map[string]any {
+func buildViews(st *stores, data hackertracker.SourceData) map[string]any {
 	return map[string]any{
-		"contentCards":       buildContentCards(st),
-		"documentsList":      buildDocumentsList(st),
-		"organizationsCards": buildOrganizationsCards(st),
-		"peopleCards":        buildPeopleCards(st),
-		"searchData":         createSearchData(st),
-		"tagTypesBrowse":     buildTagTypesBrowse(st),
+		"contentCards":        buildContentCards(st),
+		"contentFilterIndex":  buildContentFilterIndex(st),
+		"documentsList":       buildDocumentsList(st),
+		"organizationsBrowse": buildOrganizationsBrowse(st, buildTagIDsByLabel(data)),
+		"peopleCards":         buildPeopleCards(st),
+		"searchData":          createSearchData(st),
+		"tagTypesBrowse":      buildTagTypesBrowse(st),
 	}
 }
 
-func buildOrganizationsCards(st *stores) map[string][]OrganizationCard {
+func buildOrganizationsBrowse(st *stores, tagIDsByLabel TagIDsByLabel) OrganizationsBrowse {
 	entries := []organizationCardEntry{}
 	for _, orgID := range st.organizationIDs {
 		org := st.organizationsByID[orgID]
@@ -115,8 +127,10 @@ func buildOrganizationsCards(st *stores) map[string][]OrganizationCard {
 		)
 	})
 
-	cards := map[string][]OrganizationCard{}
+	all := make([]OrganizationCard, 0, len(entries))
+	byTag := map[string][]OrganizationCard{}
 	for _, entry := range entries {
+		all = append(all, entry.Card)
 		seenTags := map[int]bool{}
 		assigned := false
 		for _, tagID := range entry.TagIDs {
@@ -125,14 +139,29 @@ func buildOrganizationsCards(st *stores) map[string][]OrganizationCard {
 			}
 			seenTags[tagID] = true
 			key := idKey(tagID)
-			cards[key] = append(cards[key], entry.Card)
+			byTag[key] = append(byTag[key], entry.Card)
 			assigned = true
 		}
 		if !assigned {
-			cards["uncategorized"] = append(cards["uncategorized"], entry.Card)
+			byTag["uncategorized"] = append(byTag["uncategorized"], entry.Card)
 		}
 	}
-	return cards
+	return OrganizationsBrowse{All: all, ByTag: byTag, TagIDsByLabel: tagIDsByLabel}
+}
+
+func buildContentFilterIndex(st *stores) FilterIndex {
+	idsByTag := map[string][]int{}
+	for _, contentID := range st.contentIDs {
+		seen := map[int]bool{}
+		for _, tagID := range st.contentByID[contentID].TagIDs {
+			if seen[tagID] {
+				continue
+			}
+			seen[tagID] = true
+			idsByTag[idKey(tagID)] = append(idsByTag[idKey(tagID)], contentID)
+		}
+	}
+	return FilterIndex{ItemCount: len(st.contentIDs), ItemIDsByTag: idsByTag}
 }
 
 func buildPeopleCards(st *stores) []PeopleCard {
@@ -263,14 +292,7 @@ func buildDocumentsList(st *stores) []DocumentListItem {
 func buildContentCards(st *stores) []ContentCard {
 	out := []ContentCard{}
 	for _, contentID := range st.contentIDs {
-		item := st.contentByID[contentID]
-		tags := tagsForIDs(item.TagIDs, st.tagsByID)
-		slices.SortFunc(tags, compareTags)
-		compactTags := make([]CompactTag, 0, len(tags))
-		for _, tag := range tags {
-			compactTags = append(compactTags, compactTag(tag))
-		}
-		out = append(out, ContentCard{ID: item.ID, LogoURL: item.LogoURL, Tags: compactTags, Title: item.Title})
+		out = append(out, buildContentCard(st.contentByID[contentID], st))
 	}
 	slices.SortFunc(out, func(left, right ContentCard) int {
 		return cmp.Or(
@@ -279,6 +301,20 @@ func buildContentCards(st *stores) []ContentCard {
 		)
 	})
 	return out
+}
+
+func buildContentCard(item ContentModel, st *stores) ContentCard {
+	tags := tagsForIDs(item.TagIDs, st.tagsByID)
+	slices.SortFunc(tags, compareTags)
+	compactTags := make([]CompactTag, 0, len(tags))
+	for _, tag := range tags {
+		compactTags = append(compactTags, compactTag(tag))
+	}
+	tagCount := len(compactTags)
+	if len(compactTags) > 4 {
+		compactTags = compactTags[:4]
+	}
+	return ContentCard{ID: item.ID, LogoURL: item.LogoURL, TagCount: tagCount, Tags: compactTags, Title: item.Title}
 }
 
 func createSearchData(st *stores) []SearchItem {
@@ -410,7 +446,6 @@ func compactTag(tag TagModel) CompactTag {
 		ColorForeground: tag.ColorForeground,
 		ID:              tag.ID,
 		Label:           tag.Label,
-		SortOrder:       tag.SortOrder,
 	}
 }
 
