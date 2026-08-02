@@ -158,18 +158,20 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export
 	}
 	indexes := buildIndexes(st, conf.Timezone)
 	pageViews, details := buildPageReadyArtifacts(st, indexes, conf.Timezone)
-	views := buildViews(st)
+	views := buildViews(st, data)
 	for key, value := range pageViews {
 		views[key] = value
 	}
-
+	detailShards := map[string]export.DetailShardSpec{
+		"content":       {Count: 8, Digits: 2},
+		"documents":     {Count: 1, Digits: 2},
+		"organizations": {Count: 4, Digits: 2},
+		"people":        {Count: 8, Digits: 2},
+	}
 	return export.Artifacts{
 		Manifest: map[string]any{
 			"buildTimestamp": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
-			"code":           conf.Code,
-			"name":           conf.Name,
-			"schemaVersion":  3,
-			"timezone":       conf.Timezone,
+			"schemaVersion":  4,
 		},
 		Conference: conf,
 		Schedule:   buildScheduleExport(conf, data, st),
@@ -178,9 +180,9 @@ func Build(conf hackertracker.Conference, data hackertracker.SourceData) (export
 			"sessionsByDay": indexes.sessionsByDay,
 			"sessionsByTag": indexes.sessionsByTag,
 		},
-		Views:   views,
-		Derived: map[string]any{"tagIdsByLabel": buildTagIDsByLabel(data)},
-		Details: details,
+		Views:        views,
+		Details:      details,
+		DetailShards: detailShards,
 	}, nil
 }
 
