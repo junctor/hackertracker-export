@@ -38,14 +38,14 @@ type TagSummary struct {
 	ColorForeground string `json:"colorForeground"`
 	ID              int    `json:"id"`
 	Label           string `json:"label"`
-	SortOrder       *int   `json:"sortOrder"`
+	SortOrder       int    `json:"sortOrder"`
 }
 
 type TagTypeBrowse struct {
 	Category  *string      `json:"category"`
 	ID        int          `json:"id"`
 	Label     string       `json:"label"`
-	SortOrder *int         `json:"sortOrder"`
+	SortOrder int          `json:"sortOrder"`
 	Tags      []TagSummary `json:"tags"`
 }
 
@@ -65,6 +65,7 @@ type CompactTag struct {
 	ColorForeground string `json:"colorForeground"`
 	ID              int    `json:"id"`
 	Label           string `json:"label"`
+	SortOrder       int    `json:"sortOrder"`
 }
 
 type ContentCard struct {
@@ -122,7 +123,7 @@ func buildOrganizationsBrowse(st *stores, tagIDsByLabel TagIDsByLabel) Organizat
 	}
 	slices.SortFunc(entries, func(left, right organizationCardEntry) int {
 		return cmp.Or(
-			alphaCompare(left.Card.Name, right.Card.Name),
+			compareDirectoryNames(left.Card.Name, right.Card.Name),
 			cmp.Compare(left.Card.ID, right.Card.ID),
 		)
 	})
@@ -177,7 +178,7 @@ func buildPeopleCards(st *stores) []PeopleCard {
 	}
 	slices.SortFunc(cards, func(left, right PeopleCard) int {
 		return cmp.Or(
-			alphaCompare(left.Name, right.Name),
+			compareDirectoryNames(left.Name, right.Name),
 			cmp.Compare(left.ID, right.ID),
 		)
 	})
@@ -232,13 +233,13 @@ func buildTagTypesBrowse(st *stores) []TagTypeBrowse {
 			Category:  group.tagType.Category,
 			ID:        group.tagType.ID,
 			Label:     group.tagType.Label,
-			SortOrder: group.tagType.SortOrder,
+			SortOrder: numericSortOrder(group.tagType.SortOrder),
 			Tags:      tags,
 		})
 	}
 	slices.SortFunc(out, func(left, right TagTypeBrowse) int {
 		return cmp.Or(
-			compareOptionalInts(left.SortOrder, right.SortOrder),
+			cmp.Compare(left.SortOrder, right.SortOrder),
 			cmp.Compare(left.Label, right.Label),
 			cmp.Compare(left.ID, right.ID),
 		)
@@ -304,12 +305,7 @@ func buildContentCards(st *stores) []ContentCard {
 }
 
 func buildContentCard(item ContentModel, st *stores) ContentCard {
-	tags := tagsForIDs(item.TagIDs, st.tagsByID)
-	slices.SortFunc(tags, compareTags)
-	compactTags := make([]CompactTag, 0, len(tags))
-	for _, tag := range tags {
-		compactTags = append(compactTags, compactTag(tag))
-	}
+	compactTags := sortedCompactTags(item.TagIDs, st.tagsByID)
 	tagCount := len(compactTags)
 	if len(compactTags) > 4 {
 		compactTags = compactTags[:4]
@@ -440,13 +436,51 @@ func normalizeLabel(value string) string {
 	return strings.Trim(b.String(), "_")
 }
 
+func compareDirectoryNames(a, b string) int {
+	return cmp.Or(
+		strings.Compare(directorySortKey(a), directorySortKey(b)),
+		alphaCompare(a, b),
+	)
+}
+
+func directorySortKey(value string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(value) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func compactTag(tag TagModel) CompactTag {
 	return CompactTag{
 		ColorBackground: tag.ColorBackground,
 		ColorForeground: tag.ColorForeground,
 		ID:              tag.ID,
 		Label:           tag.Label,
+		SortOrder:       numericSortOrder(tag.SortOrder),
 	}
+}
+
+// A missing source order remains last while every exported sortOrder stays a JSON number.
+const missingSortOrder = 2_147_483_647
+
+func numericSortOrder(sortOrder *int) int {
+	if sortOrder == nil {
+		return missingSortOrder
+	}
+	return *sortOrder
+}
+
+func sortedCompactTags(tagIDs []int, tagsByID map[int]TagModel) []CompactTag {
+	tags := tagsForIDs(tagIDs, tagsByID)
+	slices.SortFunc(tags, compareTags)
+	compactTags := make([]CompactTag, 0, len(tags))
+	for _, tag := range tags {
+		compactTags = append(compactTags, compactTag(tag))
+	}
+	return compactTags
 }
 
 func tagSummary(tag TagModel) TagSummary {
@@ -455,13 +489,13 @@ func tagSummary(tag TagModel) TagSummary {
 		ColorForeground: tag.ColorForeground,
 		ID:              tag.ID,
 		Label:           tag.Label,
-		SortOrder:       tag.SortOrder,
+		SortOrder:       numericSortOrder(tag.SortOrder),
 	}
 }
 
 func compareTagSummaries(a, b TagSummary) int {
 	return cmp.Or(
-		compareOptionalInts(a.SortOrder, b.SortOrder),
+		cmp.Compare(a.SortOrder, b.SortOrder),
 		alphaCompare(a.Label, b.Label),
 		cmp.Compare(a.ID, b.ID),
 	)

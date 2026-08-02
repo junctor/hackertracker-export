@@ -86,12 +86,7 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) ScheduleBro
 		}
 	}
 
-	resolvedTags := tagsForIDs(session.TagIDs, st.tagsByID)
-	slices.SortFunc(resolvedTags, compareTags)
-	tags := make([]CompactTag, 0, len(resolvedTags))
-	for _, tag := range resolvedTags {
-		tags = append(tags, compactTag(tag))
-	}
+	tags := sortedCompactTags(session.TagIDs, st.tagsByID)
 	tagCount := len(tags)
 	if len(tags) > 4 {
 		tags = tags[:4]

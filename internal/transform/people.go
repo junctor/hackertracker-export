@@ -53,12 +53,7 @@ type PersonDetail struct {
 func buildContentDetail(content ContentModel, st *stores, allSessions []SessionModel) ContentDetail {
 	sessions := sessionsForContent(content, allSessions, st)
 	people := peopleForContent(content, sessions, st)
-	tags := tagsForIDs(content.TagIDs, st.tagsByID)
-	slices.SortFunc(tags, compareTags)
-	compactTags := make([]CompactTag, 0, len(tags))
-	for _, tag := range tags {
-		compactTags = append(compactTags, compactTag(tag))
-	}
+	compactTags := sortedCompactTags(content.TagIDs, st.tagsByID)
 
 	return ContentDetail{
 		AccentColor: contentDetailAccentColor(content, sessions, st),
