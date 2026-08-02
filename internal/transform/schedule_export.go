@@ -41,7 +41,7 @@ func buildScheduleExport(conf hackertracker.Conference, data hackertracker.Sourc
 	})
 
 	return export.ScheduleExport{
-		SchemaVersion: 2,
+		SchemaVersion: 4,
 		Metadata: export.ScheduleExportMetadata{
 			ConferenceCode:           cleanText(conf.Code),
 			ConferenceName:           cleanText(conf.Name),
