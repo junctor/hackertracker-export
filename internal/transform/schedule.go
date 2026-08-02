@@ -12,29 +12,36 @@ type builtIndexes struct {
 	sessionsByTag map[string][]int
 }
 
-type SessionViewModel struct {
-	Begin                 string        `json:"begin"`
-	BeginDisplay          string        `json:"beginDisplay"`
-	BeginIso              string        `json:"beginIso"`
-	BeginTimestampSeconds int64         `json:"beginTimestampSeconds"`
-	Color                 string        `json:"color"`
-	ContentEntity         *ContentModel `json:"contentEntity"`
-	ContentID             int           `json:"contentId"`
-	End                   string        `json:"end"`
-	EndDisplay            string        `json:"endDisplay"`
-	EndIso                string        `json:"endIso"`
-	EndTimestampSeconds   int64         `json:"endTimestampSeconds"`
-	ID                    int           `json:"id"`
-	LocationName          string        `json:"locationName"`
-	Session               SessionModel  `json:"session"`
-	PeopleText            *string       `json:"speakers"`
-	Tags                  []CompactTag  `json:"tags"`
-	Title                 string        `json:"title"`
+type ScheduleBrowseSession struct {
+	BeginDisplay          string       `json:"beginDisplay"`
+	BeginIso              string       `json:"beginIso"`
+	BeginTimestampSeconds int64        `json:"beginTimestampSeconds"`
+	Color                 string       `json:"color"`
+	ContentID             int          `json:"contentId"`
+	EndDisplay            string       `json:"endDisplay"`
+	EndIso                string       `json:"endIso"`
+	EndTimestampSeconds   int64        `json:"endTimestampSeconds"`
+	ID                    int          `json:"id"`
+	LocationName          string       `json:"locationName"`
+	PeopleText            *string      `json:"speakers"`
+	TagCount              int          `json:"tagCount"`
+	Tags                  []CompactTag `json:"tags"`
+	Title                 string       `json:"title"`
 }
 
 type ScheduleDay struct {
-	Day      string             `json:"day"`
-	Sessions []SessionViewModel `json:"sessions"`
+	Day      string                  `json:"day"`
+	Sessions []ScheduleBrowseSession `json:"sessions"`
+}
+
+type ScheduleSessionPosition struct {
+	DayIndex     int `json:"dayIndex"`
+	SessionIndex int `json:"sessionIndex"`
+}
+
+type ScheduleBrowse struct {
+	Days                 []ScheduleDay                      `json:"days"`
+	SessionPositionsByID map[string]ScheduleSessionPosition `json:"sessionPositionsById"`
 }
 
 type LocationCard struct {
@@ -42,24 +49,6 @@ type LocationCard struct {
 	Name      string  `json:"name"`
 	ParentID  *int    `json:"parentId"`
 	ShortName *string `json:"shortName"`
-}
-
-type TagDetail struct {
-	Days []ScheduleDay `json:"days"`
-	Tag  TagModel      `json:"tag"`
-}
-
-type LocationDetail struct {
-	Days     []ScheduleDay `json:"days"`
-	Location LocationModel `json:"location"`
-}
-
-type SessionDetail struct {
-	Content  ContentModel   `json:"content"`
-	Location *LocationModel `json:"location"`
-	People   []PersonModel  `json:"people"`
-	Session  SessionModel   `json:"session"`
-	Tags     []TagModel     `json:"tags"`
 }
 
 func buildIndexes(st *stores, timezone string) builtIndexes {
@@ -82,17 +71,12 @@ func buildIndexes(st *stores, timezone string) builtIndexes {
 	return builtIndexes{sessionsByDay: sessionsByDay, sessionsByTag: sessionsByTag}
 }
 
-func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionViewModel {
+func buildScheduleSessionViewModel(session SessionModel, st *stores) ScheduleBrowseSession {
 	peopleNames := []string{}
 	for _, personID := range session.PersonIDs {
 		if person, ok := st.peopleByID[personID]; ok && person.Name != "" {
 			peopleNames = append(peopleNames, person.Name)
 		}
-	}
-
-	var contentEntity *ContentModel
-	if content, ok := st.contentByID[session.ContentID]; ok {
-		contentEntity = &content
 	}
 
 	locationName := "Unknown location"
@@ -108,6 +92,10 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionView
 	for _, tag := range resolvedTags {
 		tags = append(tags, compactTag(tag))
 	}
+	tagCount := len(tags)
+	if len(tags) > 4 {
+		tags = tags[:4]
+	}
 
 	var peopleText *string
 	if len(peopleNames) > 0 {
@@ -115,22 +103,19 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionView
 		peopleText = &text
 	}
 
-	return SessionViewModel{
-		Begin:                 session.Begin,
+	return ScheduleBrowseSession{
 		BeginDisplay:          firstNonEmpty(session.BeginDisplay, sessionTimeTable(session.Begin, true, "")),
 		BeginIso:              firstNonEmpty(session.BeginIso, isoTime(session.Begin)),
 		BeginTimestampSeconds: session.BeginTimestampSeconds,
 		Color:                 session.Color,
-		ContentEntity:         contentEntity,
 		ContentID:             session.ContentID,
-		End:                   session.End,
 		EndDisplay:            firstNonEmpty(session.EndDisplay, sessionTimeTable(session.End, false, "")),
 		EndIso:                firstNonEmpty(session.EndIso, isoTime(session.End)),
 		EndTimestampSeconds:   session.EndTimestampSeconds,
 		ID:                    session.ID,
 		LocationName:          locationName,
-		Session:               session,
 		PeopleText:            peopleText,
+		TagCount:              tagCount,
 		Tags:                  tags,
 		Title:                 session.Title,
 	}
@@ -138,7 +123,7 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionView
 
 func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) (map[string]any, map[string]map[int]any) {
 	allSessions := make([]SessionModel, 0, len(st.sessionIDs))
-	modelsBySessionID := map[int]SessionViewModel{}
+	modelsBySessionID := map[int]ScheduleBrowseSession{}
 	for _, sessionID := range st.sessionIDs {
 		session := st.sessionsByID[sessionID]
 		allSessions = append(allSessions, session)
@@ -146,12 +131,7 @@ func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) 
 	}
 
 	scheduleDays := buildAllScheduleDays(st, indexes, modelsBySessionID, timezone)
-	bookmarkSessionsByID := map[string]SessionViewModel{}
-	for _, sessionID := range st.sessionIDs {
-		if model, ok := modelsBySessionID[sessionID]; ok {
-			bookmarkSessionsByID[idKey(sessionID)] = model
-		}
-	}
+	scheduleBrowse := buildScheduleBrowse(scheduleDays)
 
 	locationCards := []LocationCard{}
 	for _, locationID := range st.locationIDs {
@@ -177,40 +157,15 @@ func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) 
 
 	details := map[string]map[int]any{
 		"content":       {},
-		"sessions":      {},
 		"people":        {},
-		"tags":          {},
-		"locations":     {},
 		"documents":     {},
 		"organizations": {},
 	}
 	for _, contentID := range st.contentIDs {
 		details["content"][contentID] = buildContentDetail(st.contentByID[contentID], st, allSessions)
 	}
-	for _, sessionID := range st.sessionIDs {
-		details["sessions"][sessionID] = buildSessionDetail(st.sessionsByID[sessionID], st)
-	}
 	for _, personID := range st.peopleIDs {
 		details["people"][personID] = buildPersonDetail(st.peopleByID[personID], st, allSessions)
-	}
-	for _, tagID := range st.tagIDs {
-		details["tags"][tagID] = TagDetail{
-			Days: buildScheduleDaysFromSessions(sessionsFromIDs(sessionIDsForTag(tagID, st, indexes), st.sessionsByID), modelsBySessionID, timezone),
-			Tag:  st.tagsByID[tagID],
-		}
-	}
-	for _, locationID := range st.locationIDs {
-		location := st.locationsByID[locationID]
-		sessions := []SessionModel{}
-		for _, session := range allSessions {
-			if session.LocationID != nil && *session.LocationID == locationID {
-				sessions = append(sessions, session)
-			}
-		}
-		details["locations"][locationID] = LocationDetail{
-			Days:     buildScheduleDaysFromSessions(sessions, modelsBySessionID, timezone),
-			Location: location,
-		}
 	}
 	for _, id := range st.documentIDs {
 		details["documents"][id] = st.documentsByID[id]
@@ -220,14 +175,24 @@ func buildPageReadyArtifacts(st *stores, indexes builtIndexes, timezone string) 
 	}
 
 	return map[string]any{
-		"announcementsList":    announcements,
-		"bookmarkSessionsById": bookmarkSessionsByID,
-		"locationCards":        locationCards,
-		"scheduleDays":         scheduleDays,
+		"announcementsList":   announcements,
+		"locationCards":       locationCards,
+		"scheduleBrowse":      scheduleBrowse,
+		"scheduleFilterIndex": FilterIndex{ItemCount: len(st.sessionIDs), ItemIDsByTag: indexes.sessionsByTag},
 	}, details
 }
 
-func buildAllScheduleDays(st *stores, indexes builtIndexes, modelsBySessionID map[int]SessionViewModel, timezone string) []ScheduleDay {
+func buildScheduleBrowse(scheduleDays []ScheduleDay) ScheduleBrowse {
+	positions := map[string]ScheduleSessionPosition{}
+	for dayIndex, day := range scheduleDays {
+		for sessionIndex, session := range day.Sessions {
+			positions[idKey(session.ID)] = ScheduleSessionPosition{DayIndex: dayIndex, SessionIndex: sessionIndex}
+		}
+	}
+	return ScheduleBrowse{Days: scheduleDays, SessionPositionsByID: positions}
+}
+
+func buildAllScheduleDays(st *stores, indexes builtIndexes, modelsBySessionID map[int]ScheduleBrowseSession, timezone string) []ScheduleDay {
 	keys := slices.Sorted(maps.Keys(indexes.sessionsByDay))
 	days := []ScheduleDay{}
 	for _, day := range keys {
@@ -243,7 +208,7 @@ func buildAllScheduleDays(st *stores, indexes builtIndexes, modelsBySessionID ma
 	return buildScheduleDaysFromSessions(sessionsFromIDs(st.sessionIDs, st.sessionsByID), modelsBySessionID, timezone)
 }
 
-func buildScheduleDaysFromSessions(sessions []SessionModel, modelsBySessionID map[int]SessionViewModel, timezone string) []ScheduleDay {
+func buildScheduleDaysFromSessions(sessions []SessionModel, modelsBySessionID map[int]ScheduleBrowseSession, timezone string) []ScheduleDay {
 	groups := map[string][]SessionModel{}
 	for _, session := range sessions {
 		day := sessionDay(session.Begin, timezone)
@@ -263,9 +228,9 @@ func buildScheduleDaysFromSessions(sessions []SessionModel, modelsBySessionID ma
 	return out
 }
 
-func modelsForSessions(sessions []SessionModel, modelsBySessionID map[int]SessionViewModel) []SessionViewModel {
+func modelsForSessions(sessions []SessionModel, modelsBySessionID map[int]ScheduleBrowseSession) []ScheduleBrowseSession {
 	sortSessions(sessions)
-	models := []SessionViewModel{}
+	models := []ScheduleBrowseSession{}
 	for _, session := range sessions {
 		if model, ok := modelsBySessionID[session.ID]; ok {
 			models = append(models, model)
@@ -291,39 +256,6 @@ func sessionsFromIDs(ids []int, byID map[int]SessionModel) []SessionModel {
 		}
 	}
 	return sessions
-}
-
-func sessionIDsForTag(tagID int, st *stores, indexes builtIndexes) []int {
-	if indexed, ok := indexes.sessionsByTag[idKey(tagID)]; ok {
-		return indexed
-	}
-	out := []int{}
-	for _, sessionID := range st.sessionIDs {
-		for _, id := range st.sessionsByID[sessionID].TagIDs {
-			if id == tagID {
-				out = append(out, sessionID)
-				break
-			}
-		}
-	}
-	return out
-}
-
-func buildSessionDetail(session SessionModel, st *stores) SessionDetail {
-	content := st.contentByID[session.ContentID]
-	var location *LocationModel
-	if session.LocationID != nil {
-		if model, ok := st.locationsByID[*session.LocationID]; ok {
-			location = &model
-		}
-	}
-	return SessionDetail{
-		Content:  content,
-		Location: location,
-		People:   peopleForIDs(session.PersonIDs, st),
-		Session:  session,
-		Tags:     tagsForIDs(session.TagIDs, st.tagsByID),
-	}
 }
 
 func valueOrZero(value *int64) int64 {
