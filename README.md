@@ -115,6 +115,18 @@ Generate multiple conferences into one output root:
 go run ./cmd/hackertracker info --out ./out/ht --conference DCSG2026 --conference DEFCON34
 ```
 
+Refresh the runtime data used by the sibling `hackertracker-info` checkout:
+
+```sh
+go run ./cmd/hackertracker info --conference DCSG2026 DEFCON34 DEFCON33 DEFCONBAHRAIN2025 DCME2026 DCTSG202610
+rm -rf ../hackertracker-info/public/ht
+cp -r out/ht ../hackertracker-info/public/
+```
+
+Replacing the directory prevents removed schema files from surviving a merge.
+The web application fetches these files at runtime; regenerating them does not
+require rebuilding the application bundle.
+
 When multiple conferences are exported with `--out`, each conference is written below that root using the lower-case conference code.
 
 ## Output Structure
@@ -126,42 +138,50 @@ out/ht/<lowercase-conference>/
   conference.json
   manifest.json
 
-  derived/
-    tagIdsByLabel.json
-
   exports/
     schedule.json
     schedule.csv
 
   views/
     announcementsList.json
-    bookmarkSessionsById.json
     contentCards.json
+    contentFilterIndex.json
     documentsList.json
     locationCards.json
-    organizationsCards.json
+    organizationsBrowse.json
     peopleCards.json
-    scheduleDays.json
+    scheduleBrowse.json
+    scheduleFilterIndex.json
     searchData.json
     tagTypesBrowse.json
 
   details/
-    content.json
-    documents.json
-    organizations.json
-    people.json
-    tags.json
+    content/00.json ... 07.json
+    documents/00.json
+    organizations/00.json ... 03.json
+    people/00.json ... 07.json
 ```
 
 The website export is runtime-only. It intentionally does not publish
-`raw/**/*.json`, `entities/*.json`, `indexes/*.json`,
-`details/sessions/<id>.json`, or `details/locations/<id>.json`. Session detail
-pages and location detail pages are not part of the current `info.defcon.org`
-runtime contract; content, people, tag, organization, and document details
-remain available under `details/` as aggregate lookup files keyed by string id.
-For example, `details/content.json` is a `Record<string, ContentDetailView>`
-replacement for the old `details/content/<id>.json` files, and the same lookup
-shape applies to documents, organizations, people, and tags.
+`raw/**/*.json`, `entities/*.json`, `indexes/*.json`, or unused session,
+location, and tag detail views. Content, people, organization, and document
+details are emitted as deterministic ID-keyed shards. Content and people use
+eight shards, organizations use four, and documents use one. These paths and
+counts are the fixed schema-4 runtime contract. The manifest contains only the
+schema version and build timestamp used for cache invalidation. The fixed shard
+layout keeps every conference export at 36 files while avoiding a
+conference-wide detail download for a single route.
+
+`views/scheduleBrowse.json` is the compact runtime schedule contract shared by
+schedule and bookmark pages. It stores display-ready sessions once under
+`days`, omits redundant nested content/session copies, and provides
+`sessionPositionsById` for bookmark lookups.
+
+The focused content and schedule filter indexes contain only stable item IDs by
+tag. They let filter routes calculate interactive combinations without loading
+or scanning the full card or schedule payload. `organizationsBrowse.json`
+contains the prejoined all-organizations list, category lists, and label lookup
+used by organization routes.
 
 Each `info` run recreates the generated subdirectories so stale JSON and CSV
 files are removed.
@@ -173,8 +193,7 @@ include `contentIds` plus `contentCount` so the web app can show matching tags
 as first-class results and link to all associated content without duplicating
 large tag objects inside every content record. Search text is normalized with
 the same case-insensitive, accent-folding, punctuation-to-space behavior used by
-the web client. Manifest `schemaVersion: 3` is the first version with tag-aware
-search data.
+the web client. This is part of the fixed schema-4 runtime contract.
 
 ## Public Schedule Exports
 
@@ -191,7 +210,7 @@ against files under `details/`. Schedule exports are scoped to the conference
 page or conference directory they are downloaded from, so they do not repeat the
 conference name in each session record or CSV row.
 
-`exports/schedule.json` uses `schemaVersion: 2` and is the rich,
+`exports/schedule.json` uses `schemaVersion: 4` and is the rich,
 self-contained format for LLMs, agents, applications, search and retrieval,
 integrations, and archival use. The top-level object contains compact
 `metadata` followed by the `sessions` array. Metadata includes conference code,
@@ -226,7 +245,7 @@ CSV columns:
 | `tag_names` | `;`-delimited tag names. |
 | `description_snippet` | Whitespace-normalized public description preview, capped at 1200 characters including `...` when truncated. |
 
-`views/scheduleDays.json` remains an application view model for the website UI.
+`views/scheduleBrowse.json` is the application view model for the website UI.
 It is not the stable public export contract.
 
 ## Raw Data vs Generated Artifacts
@@ -237,7 +256,7 @@ Raw fetch output follows HackerTracker Firestore collection names. Generated web
 | -------------------------------- | ----------------------------------------------------------------------- |
 | `content`                        | schedule views, content cards, content details                          |
 | `speakers`                       | `people`, people cards, people details                                  |
-| `tagtypes` and embedded tag data | tag browse views, tag details                                           |
+| `tagtypes` and embedded tag data | tag browse views                                                        |
 | `documents`                      | document lists, document details                                        |
 | `locations`                      | location cards                                                          |
 | `organizations`                  | organization cards, organization details                                |
