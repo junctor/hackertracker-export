@@ -102,11 +102,11 @@ func buildScheduleSessionViewModel(session SessionModel, st *stores) SessionView
 		}
 	}
 
-	tags := []CompactTag{}
-	for _, tagID := range session.TagIDs {
-		if tag, ok := st.tagsByID[tagID]; ok {
-			tags = append(tags, compactTag(tag))
-		}
+	resolvedTags := tagsForIDs(session.TagIDs, st.tagsByID)
+	slices.SortFunc(resolvedTags, compareTags)
+	tags := make([]CompactTag, 0, len(resolvedTags))
+	for _, tag := range resolvedTags {
+		tags = append(tags, compactTag(tag))
 	}
 
 	var peopleText *string

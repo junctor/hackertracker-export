@@ -59,6 +59,7 @@ type CompactTag struct {
 	ColorForeground string `json:"colorForeground"`
 	ID              int    `json:"id"`
 	Label           string `json:"label"`
+	SortOrder       *int   `json:"sortOrder"`
 }
 
 type ContentCard struct {
@@ -409,6 +410,7 @@ func compactTag(tag TagModel) CompactTag {
 		ColorForeground: tag.ColorForeground,
 		ID:              tag.ID,
 		Label:           tag.Label,
+		SortOrder:       tag.SortOrder,
 	}
 }
 
